@@ -38,50 +38,14 @@
     <main class="game-shell">
       <section class="board-panel" aria-labelledby="mission-title">
         <div class="mission-heading">
-          <p class="eyebrow">Mission preview</p>
+          <p class="eyebrow">Mission setup</p>
           <h2 id="mission-title">The Nest</h2>
         </div>
         <game-board></game-board>
       </section>
 
-      <aside class="mission-panel" aria-label="Mission status">
-        <div>
-          <p class="eyebrow">First playable slice</p>
-          <h2>Into the undercity</h2>
-          <p>
-            The mission board is now encoded and validated by the game engine. Setup and
-            rules-enforced play are coming in the next slices.
-          </p>
-        </div>
-
-        <dl class="mission-facts">
-          <div>
-            <dt>Board</dt>
-            <dd>13 × 19</dd>
-          </div>
-          <div>
-            <dt>Nests</dt>
-            <dd>3</dd>
-          </div>
-          <div>
-            <dt>Doors</dt>
-            <dd>6</dd>
-          </div>
-          <div>
-            <dt>Round limit</dt>
-            <dd>8</dd>
-          </div>
-        </dl>
-
-        <div class="map-key" aria-label="Map key">
-          <h3>Map key</h3>
-          <ul>
-            <li><span class="key-mark key-nest"></span>Nest</li>
-            <li><span class="key-mark key-spawn"></span>Skaven spawn</li>
-            <li><span class="key-mark key-deploy"></span>Hero deployment</li>
-            <li><span class="key-mark key-exit"></span>Locked exit</li>
-          </ul>
-        </div>
+      <aside class="mission-panel" aria-label="Game setup">
+        <game-setup></game-setup>
       </aside>
     </main>
 

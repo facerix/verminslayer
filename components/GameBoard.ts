@@ -1,5 +1,9 @@
 import { renderBoard } from '/src/canvas/boardRenderer.js';
+import type { BoardHeroPresentation } from '/src/canvas/boardRenderer.js';
+import { pointToSquare } from '/src/canvas/boardGeometry.js';
+import type { BoardGeometry } from '/src/canvas/boardGeometry.js';
 import { h } from '/src/domUtils.js';
+import type { Position } from '/src/game/map.js';
 import { THE_NEST } from '/src/game/missions/theNest.js';
 
 const STYLES = `
@@ -14,6 +18,11 @@ const STYLES = `
     display: block;
     width: 100%;
     height: 100%;
+    touch-action: manipulation;
+  }
+
+  canvas.is-interactive {
+    cursor: crosshair;
   }
 
   .board-frame {
@@ -44,6 +53,9 @@ export class GameBoard extends HTMLElement {
   readonly #canvas: HTMLCanvasElement;
   readonly #frame: HTMLDivElement;
   readonly #resizeObserver: ResizeObserver;
+  #geometry: BoardGeometry | null = null;
+  #heroes: readonly BoardHeroPresentation[] = [];
+  #legalSquares: readonly Position[] = [];
 
   constructor() {
     super();
@@ -61,6 +73,19 @@ export class GameBoard extends HTMLElement {
     this.#frame = h('div', { className: 'board-frame' }, [this.#canvas, description]);
     shadow.append(h('style', { textContent: STYLES }), this.#frame);
     this.#resizeObserver = new ResizeObserver(() => this.#draw());
+    this.#canvas.addEventListener('pointerup', event => this.#selectSquare(event));
+  }
+
+  set heroes(heroes: readonly BoardHeroPresentation[]) {
+    this.#heroes = heroes;
+    this.#updateDescription();
+    this.#draw();
+  }
+
+  set legalSquares(positions: readonly Position[]) {
+    this.#legalSquares = positions;
+    this.#canvas.classList.toggle('is-interactive', positions.length > 0);
+    this.#draw();
   }
 
   connectedCallback() {
@@ -83,7 +108,50 @@ export class GameBoard extends HTMLElement {
     if (!context) throw new Error('This browser does not provide a 2D canvas context');
 
     context.setTransform(pixelRatio, 0, 0, pixelRatio, 0, 0);
-    renderBoard(context, THE_NEST.board, width, height);
+    this.#geometry = renderBoard(context, THE_NEST.board, width, height, {
+      heroes: this.#heroes,
+      legalSquares: this.#legalSquares,
+    });
+  }
+
+  #selectSquare(event: PointerEvent) {
+    if (!this.#geometry || this.#legalSquares.length === 0) return;
+    const bounds = this.#canvas.getBoundingClientRect();
+    const position = pointToSquare(
+      { x: event.clientX - bounds.left, y: event.clientY - bounds.top },
+      this.#geometry
+    );
+    if (
+      !position ||
+      !this.#legalSquares.some(
+        legal => legal.row === position.row && legal.column === position.column
+      )
+    ) {
+      return;
+    }
+    this.dispatchEvent(
+      new CustomEvent<Position>('board-square-selected', {
+        detail: position,
+        bubbles: true,
+        composed: true,
+      })
+    );
+  }
+
+  #updateDescription() {
+    const description = this.shadowRoot?.querySelector('#board-description');
+    if (!description) return;
+    const heroes = this.#heroes.length
+      ? ` Deployed heroes: ${this.#heroes
+          .map(
+            hero =>
+              `${hero.label} at row ${hero.position.row + 1}, column ${hero.position.column + 1}, facing ${hero.facing}`
+          )
+          .join('; ')}.`
+      : '';
+    description.textContent =
+      'The Nest board: 13 columns by 19 rows, with six doors, three nests, three Skaven spawn points, one hero deployment point, and a locked south exit.' +
+      heroes;
   }
 }
 

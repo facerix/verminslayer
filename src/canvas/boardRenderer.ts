@@ -1,6 +1,20 @@
 import { calculateBoardGeometry } from '/src/canvas/boardGeometry.js';
 import type { BoardGeometry } from '/src/canvas/boardGeometry.js';
 import type { MapTile, ParsedMap } from '/src/game/map.js';
+import type { Facing } from '/src/game/gameState.js';
+import type { Position } from '/src/game/map.js';
+
+export interface BoardHeroPresentation {
+  readonly label: string;
+  readonly position: Position;
+  readonly facing: Facing;
+  readonly woundsRemaining: number;
+}
+
+export interface BoardPresentation {
+  readonly heroes?: readonly BoardHeroPresentation[];
+  readonly legalSquares?: readonly Position[];
+}
 
 const TILE_COLORS = Object.freeze({
   floor: '#3b342d',
@@ -105,7 +119,8 @@ export const renderBoard = (
   context: CanvasRenderingContext2D,
   board: ParsedMap,
   viewportWidth: number,
-  viewportHeight: number
+  viewportHeight: number,
+  presentation: BoardPresentation = {}
 ): BoardGeometry => {
   const geometry = calculateBoardGeometry(viewportWidth, viewportHeight, board.width, board.height);
 
@@ -124,6 +139,58 @@ export const renderBoard = (
       context.strokeRect(x + 0.5, y + 0.5, geometry.squareSize - 1, geometry.squareSize - 1);
       drawMarker(context, tile, geometry);
     }
+  }
+
+  for (const position of presentation.legalSquares ?? []) {
+    const x = geometry.x + position.column * geometry.squareSize;
+    const y = geometry.y + position.row * geometry.squareSize;
+    context.save();
+    context.fillStyle = 'rgb(212 85 46 / 28%)';
+    context.strokeStyle = '#f08a63';
+    context.lineWidth = Math.max(2, geometry.squareSize * 0.07);
+    context.fillRect(x + 1, y + 1, geometry.squareSize - 2, geometry.squareSize - 2);
+    context.strokeRect(
+      x + context.lineWidth / 2,
+      y + context.lineWidth / 2,
+      geometry.squareSize - context.lineWidth,
+      geometry.squareSize - context.lineWidth
+    );
+    context.restore();
+  }
+
+  for (const hero of presentation.heroes ?? []) {
+    const centerX = geometry.x + (hero.position.column + 0.5) * geometry.squareSize;
+    const centerY = geometry.y + (hero.position.row + 0.5) * geometry.squareSize;
+    const radius = geometry.squareSize * 0.36;
+    const facingOffset: Readonly<Record<Facing, readonly [number, number]>> = {
+      north: [0, -1],
+      east: [1, 0],
+      south: [0, 1],
+      west: [-1, 0],
+    };
+    const [dx, dy] = facingOffset[hero.facing];
+
+    context.save();
+    context.beginPath();
+    context.arc(centerX, centerY, radius, 0, Math.PI * 2);
+    context.fillStyle = '#d8c7a8';
+    context.fill();
+    context.strokeStyle = '#4a251b';
+    context.lineWidth = Math.max(2, geometry.squareSize * 0.07);
+    context.stroke();
+    context.beginPath();
+    context.moveTo(centerX + dx * radius * 0.35, centerY + dy * radius * 0.35);
+    context.lineTo(centerX + dx * radius * 1.15, centerY + dy * radius * 1.15);
+    context.strokeStyle = '#f08a63';
+    context.lineWidth = Math.max(2, geometry.squareSize * 0.09);
+    context.lineCap = 'round';
+    context.stroke();
+    context.fillStyle = '#241914';
+    context.font = `700 ${Math.max(9, geometry.squareSize * 0.28)}px sans-serif`;
+    context.textAlign = 'center';
+    context.textBaseline = 'middle';
+    context.fillText(hero.label, centerX, centerY);
+    context.restore();
   }
 
   return geometry;

@@ -1,3 +1,7 @@
+import { RulesError } from '/src/game/rulesError.js';
+
+export { RulesError } from '/src/game/rulesError.js';
+
 export type MapTileKind =
   | 'floor'
   | 'wall'
@@ -35,22 +39,6 @@ export interface ParseMapOptions {
   readonly width: number;
   readonly height: number;
   readonly required?: Readonly<Partial<Record<FeatureKind, number>>>;
-}
-
-export type RulesErrorCode =
-  | 'INVALID_MAP_HEIGHT'
-  | 'INVALID_MAP_WIDTH'
-  | 'UNKNOWN_MAP_SYMBOL'
-  | 'INVALID_FEATURE_COUNT';
-
-export class RulesError extends Error {
-  readonly code: RulesErrorCode;
-
-  constructor(code: RulesErrorCode, message: string) {
-    super(message);
-    this.name = 'RulesError';
-    this.code = code;
-  }
 }
 
 const TILE_KINDS: Readonly<Record<string, MapTileKind>> = Object.freeze({

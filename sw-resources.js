@@ -5,10 +5,19 @@
 const AppCacheResources = Object.freeze({
   core: [
     '/components/GameBoard.js',
+    '/components/GameSetup.js',
     '/src/canvas/boardGeometry.js',
     '/src/canvas/boardRenderer.js',
     '/src/game/map.js',
+    '/src/game/entities.js',
+    '/src/game/gameModule.js',
+    '/src/game/gameSession.js',
+    '/src/game/gameState.js',
+    '/src/game/missionDefinition.js',
+    '/src/game/modules/setup.js',
     '/src/game/missions/theNest.js',
+    '/src/game/missions/registry.js',
+    '/src/game/rulesError.js',
   ],
   static: [],
 });
