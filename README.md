@@ -1,6 +1,20 @@
-# Facerix App Template
+# Verminslayer
 
-Progressive Web App (PWA) template for building offline-first web applications. Built with vanilla TypeScript, Web Components, and Service Workers — compiled with `tsc`, no bundler.
+Offline-first Progressive Web App (PWA) that is the playable digital prototype of
+Verminslayer, a co-op dungeon-crawl being developed for a future physical board game. It
+handles the game loop and saves playtest state so rules can be tried, tuned, and validated
+before they are committed to cardboard and miniatures. Built with vanilla TypeScript, Web
+Components, and Service Workers — compiled with `tsc`, no bundler.
+
+The current playtest rules specification lives in [`docs/rules.md`](docs/rules.md); the
+domain brief for contributors and agents is in [CLAUDE.md](CLAUDE.md).
+
+## Product direction
+
+Verminslayer is a digital tabletop simulator and playtest harness, not a companion or
+rules-reference app. The digital game is intentionally the fastest place to experiment
+with missions, entities, turn flow, and balance. As the rules stabilize, the successful
+parts can be translated into the physical board game.
 
 ## Architecture
 
@@ -27,7 +41,7 @@ This activates pre-commit hooks that run lint and format checks before each comm
 
 ### Commands
 
-- **`pnpm start` / `pnpm dev`** — runs three concurrent processes: `tsc --watch`, a chokidar asset-copy watcher, and live-server on port 8080 serving `dist/`
+- **`pnpm start` / `pnpm dev`** — runs three concurrent processes: `tsc --watch`, a chokidar asset-copy watcher, and live-server on port 8140 serving `dist/`
 - **`pnpm build`** — one-shot `tsc` build + asset copy into `dist/`
 - **`pnpm typecheck`** — type-check src and tests without emitting
 - **`pnpm test`** — typecheck + run `node --test` against `.ts` files with the browser-specifier resolver

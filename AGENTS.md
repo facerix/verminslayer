@@ -1,6 +1,29 @@
 # AGENTS.md
 
-Agent-specific guidance. See [README.md](README.md) for project overview, architecture, and coding standards.
+Agent-specific guidance. See [README.md](README.md) for project overview, architecture, and coding standards, and [CLAUDE.md](CLAUDE.md) for the domain brief.
+
+## Domain
+
+Verminslayer is an offline-first PWA and the playable digital prototype of a future
+Verminslayer tabletop dungeon-crawl (co-op: Slayer heroes vs. a Skaven horde on a tiled map).
+The app is a playtest engine for tuning the rules before they are made into the physical
+board game.
+
+Current playtest rules specification: [`docs/rules.md`](docs/rules.md). In brief:
+
+- **Hero turn**: +3 Command (shared pool); each hero activates once with 4 Actions
+  (Move 1 · Fight 1 · Interact 1 · Guard 2).
+- **Skaven turn**: reveal noise tokens, activate revealed Skaven (move then optionally
+  fight); noise moves 5 toward the nearest hero and cannot enter hero line of sight.
+- **Fight**: both roll Fight dice, high die wins, loser takes 1 Wound, tie = nothing.
+- **Entities** carry Move / Fight / Wounds stats plus special abilities (heroes: Gotrek,
+  Felix, Snorri, Ulrika, Maximilian, Malakai; Skaven: Clanrat, Gutter Runner, Rat Ogor).
+- **Missions** (e.g. "THE NEST") define roster, noise bag, map, round limit, and victory.
+
+**Data model**: `DataStore` persists saved games under localStorage key `games`. The
+`DataRecord` interface in `src/DataStore.ts` holds `mission`, `round`, `phase`,
+`command`, `nestsDestroyed`, `heroes[]`, `notes`. Board-level state is not modelled yet —
+extend the interface, don't lean on its index signature.
 
 ## TypeScript
 
@@ -127,7 +150,7 @@ UpdateNotification (dispatched by component)
 
 Run `pnpm test` (typecheck + `node --test`). Tests live in `tests/`, import source with relative paths and the `.ts` extension, and run directly under Node 24's built-in type stripping (no compile step).
 
-For manual UI testing: use @Browser at `http://localhost:8080` (assume `pnpm dev` is already running). Verify UI, interactions, console, service worker.
+For manual UI testing: use @Browser at `http://localhost:8140` (assume `pnpm dev` is already running). Verify UI, interactions, console, service worker.
 
 ## Checklist
 

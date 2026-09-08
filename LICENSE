@@ -22,7 +22,8 @@ For the full license text, see: https://www.gnu.org/licenses/gpl-3.0.txt
 
 ADDITIONAL TERMS:
 
-This template is provided as-is for creating Progressive Web Applications.
-Any applications built using this template must also be licensed under GPL-3.0
-or a compatible license, ensuring that derivative works remain free and open
-source.
+Verminslayer is a fan-made digital prototype and playtest engine for a future
+tabletop dungeon-crawl game. It is provided as-is, with no affiliation with or
+endorsement by any game publisher or rights holder.
+Any derivative works must also be licensed under GPL-3.0 or a compatible
+license, ensuring they remain free and open source.

@@ -2,13 +2,43 @@
 
 import { v4WithTimestamp } from '/src/uuid.js';
 
+export type TurnPhase = 'hero' | 'skaven';
+
 /**
- * Minimum shape of a record. Apps consuming this template are expected to
- * extend it with their own fields; the store doesn't care what else lives on
- * the object, only that every record has an id.
+ * One tracked hero in a saved game.
+ */
+export interface HeroState {
+  /** Hero card name, e.g. "GOTREK GURNISSON". */
+  name: string;
+  /** Current wounds remaining (starts at the card's Wounds value). */
+  wounds: number;
+  /** Once-per-mission abilities already spent this game. */
+  spentAbilities?: string[];
+}
+
+/**
+ * A saved Verminslayer game. The store keys these under localStorage `games`.
+ *
+ * TODO(rylee): firm up this shape as the tracker UI takes form — the board
+ * state (model positions, door open/closed, noise token placement) is not
+ * modelled yet and currently rides on the `[key: string]: unknown` index
+ * signature.
  */
 export interface DataRecord {
   id: string;
+  /** Mission being played, e.g. "THE NEST". */
+  mission?: string;
+  /** Current round number (1-based). */
+  round?: number;
+  /** Whose turn it is. */
+  phase?: TurnPhase;
+  /** Command pool available to the heroes this round (Hero turn grants 3). */
+  command?: number;
+  /** Number of Nest markers destroyed (mission-specific). */
+  nestsDestroyed?: number;
+  heroes?: HeroState[];
+  /** Free-form notes the player jots during play. */
+  notes?: string;
   [key: string]: unknown;
 }
 
@@ -53,7 +83,7 @@ class DataStore extends EventTarget {
     } catch (error) {
       console.warn('[DataStore] Failed to parse stored JSON, resetting items.', error);
       try {
-        window.localStorage.setItem('items', '[]');
+        window.localStorage.setItem('games', '[]');
       } catch (storageError) {
         console.warn('[DataStore] Failed to reset stored items.', storageError);
       }
@@ -62,10 +92,10 @@ class DataStore extends EventTarget {
   }
 
   async init(): Promise<void> {
-    let savedItemsJson = window.localStorage.getItem('items');
+    let savedItemsJson = window.localStorage.getItem('games');
     if (!savedItemsJson) {
       savedItemsJson = '[]';
-      window.localStorage.setItem('items', savedItemsJson);
+      window.localStorage.setItem('games', savedItemsJson);
     }
     this.#items = this.#loadRecordsFromJson(savedItemsJson);
     this.#reindex();
@@ -86,7 +116,7 @@ class DataStore extends EventTarget {
   }
 
   #saveItems(): void {
-    window.localStorage.setItem('items', JSON.stringify(this.#items));
+    window.localStorage.setItem('games', JSON.stringify(this.#items));
   }
 
   #emitChangeEvent(
