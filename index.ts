@@ -1,4 +1,5 @@
 import { serviceWorkerManager } from '/src/ServiceWorkerManager.js';
+import '/components/GameBoard.js';
 import '/components/UpdateNotification.js';
 
 const whenLoaded = customElements.whenDefined('update-notification');

@@ -16,9 +16,10 @@ the digital implementation may change as playtesting reveals better choices.
 -   Move noise 5
 
 ### NOISE
--   Face-down and hidden.
--   Cannot enter hero LOS.
--   Reveal when seen.
+- Face-down and hidden from the Hero player.
+- A noise token cannot enter a square in any hero's line of sight and reveals when seen.
+- Noise tokens cannot share a square. A drawn result is consumed without placing a token
+  when every spawn square is occupied.
 
 ### ACTIONS
 -   Move — 1A
@@ -28,8 +29,29 @@ the digital implementation may change as playtesting reveals better choices.
     
 
 ### MOVE / FACING
--   When a model takes a Move action, it may move up to its Move allowance. Once during that movement, it may change its facing to any direction. It may move 0.
--   Models do not turn automatically when attacking or defending.
+- Models move orthogonally and cannot move through or finish on another model's square.
+  Gutter Runners are the exception described by Skitter.
+- When a model takes a Move action, it may follow any legal path up to its Move allowance.
+  Once during that movement, it may change its facing to any direction. It may move 0.
+- Facing is north, east, south, or west. A model's Front Arc is the three adjacent squares
+  on its facing side.
+- Models do not turn automatically when attacking or defending.
+
+### DISTANCE / ADJACENCY / LINE OF SIGHT
+
+- Adjacency, melee, Front Arcs, and deployment proximity include diagonals.
+- Ranged and proximity distances use the greater of the horizontal and vertical distance
+  between two squares (Chebyshev distance).
+- Line of sight is traced between square centers using every square touched by the ray.
+  Walls, rubble, and closed doors block line of sight, including when the ray touches the
+  corner between blocking terrain. Models, nests, water, and open or destroyed doors do
+  not block line of sight.
+
+### TERRAIN
+
+- Walls and rubble block movement and line of sight.
+- Water blocks movement but not line of sight.
+- Closed doors block movement and line of sight. Open or destroyed doors block neither.
 
 ### FIGHT
 -   Roll Fight dice: Highest die wins.
@@ -145,7 +167,7 @@ Move 5 toward the nearest hero; cannot enter hero LOS.
 
 ### THE NEST
 
-**Heroes**: 2 characters only: Gotrek and Felix
+**Heroes**: 1–5 unique heroes selected from all six; Gotrek and Felix are selected by default
 **Skaven**: Clanrats, Gutter Runners, Rat Ogor (starting noise: 3, +2 each turn)  
 **Length**: maximum 8 rounds  
 **First turn**: Heroes
@@ -163,7 +185,16 @@ The heroes win if, before the end of Hero Turn 8:
 
 #### Skaven victory
 
-The Skaven win if all five heroes are slain, or if the heroes have not fulfilled their victory condition by the end of Hero Turn 8.
+The Skaven win if all selected heroes are slain, or if the heroes have not fulfilled their victory condition by the end of Hero Turn 8.
+
+#### Board conventions
+
+- Map coordinates are written as row, column, starting at 1 in the northwest corner. The
+  map is 19 rows by 13 columns.
+- During setup, place each selected hero on `@` or an empty, passable adjacent square, with
+  a chosen facing.
+- `E` at row 19, column 2 is the Watch Post exit. It behaves as a wall until all three
+  nests are destroyed. A surviving hero who moves onto the opened exit wins immediately.
 
 #### Map
 
@@ -188,7 +219,7 @@ S.~~~.+.~...#
 #.:...#.~~.~#
 #..@..#....~#
 #.....#~~~~~#
-#############
+#E###########
 ```
 
 ##### Key to symbols:
@@ -200,6 +231,7 @@ S.~~~.+.~...#
 - `@` – Player starting position
 - `S` – Skaven spawn point
 - `N` – Skaven nest
+- `E` – Watch Post exit (locked until all three nests are destroyed)
 
 #### Noise bag
 

@@ -3,7 +3,13 @@
 // template defaults. These paths must also be copied into dist/ by
 // scripts/copy-assets.mjs.
 const AppCacheResources = Object.freeze({
-  core: [],
+  core: [
+    '/components/GameBoard.js',
+    '/src/canvas/boardGeometry.js',
+    '/src/canvas/boardRenderer.js',
+    '/src/game/map.js',
+    '/src/game/missions/theNest.js',
+  ],
   static: [],
 });
 
