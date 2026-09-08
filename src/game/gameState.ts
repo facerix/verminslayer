@@ -4,9 +4,10 @@ import type { Position } from '/src/game/map.js';
 import type { MissionDefinition, NoiseResultId } from '/src/game/missionDefinition.js';
 import { getMissionDefinition } from '/src/game/missions/registry.js';
 import { RulesError } from '/src/game/rulesError.js';
+import { hasLineOfSight } from '/src/game/lineOfSight.js';
 
 export type GameMode = 'solo' | 'two-player';
-export type SetupStep = 'select-roster' | 'deploy-heroes' | 'initial-noise';
+export type SetupStep = 'select-roster' | 'deploy-heroes' | 'initial-noise' | 'complete';
 export type Facing = 'north' | 'east' | 'south' | 'west';
 
 export interface RandomSource {
@@ -31,6 +32,13 @@ export interface ConcealedNoiseState {
   readonly position: Position;
 }
 
+export interface PendingNoiseState {
+  readonly id: string;
+  readonly resultId: NoiseResultId;
+}
+
+export type RevealedNoiseState = ConcealedNoiseState;
+
 export interface FeatureState {
   readonly position: Position;
   readonly status: 'closed' | 'intact';
@@ -40,14 +48,17 @@ export interface GameState {
   readonly missionId: string;
   readonly setupStep: SetupStep;
   readonly mode: GameMode | null;
-  readonly round: 0;
-  readonly phase: 'setup';
-  readonly command: 0;
+  readonly round: number;
+  readonly phase: 'setup' | 'hero';
+  readonly command: number;
   readonly selectedHeroIds: readonly HeroId[];
   readonly heroes: readonly HeroState[];
   readonly doors: readonly FeatureState[];
   readonly nests: readonly FeatureState[];
   readonly concealedNoise: readonly ConcealedNoiseState[];
+  readonly revealedNoise: readonly RevealedNoiseState[];
+  readonly pendingNoise: PendingNoiseState | null;
+  readonly initialNoiseDrawsResolved: number;
   readonly remainingNoiseBag: readonly NoiseResultId[];
 }
 
@@ -62,6 +73,13 @@ export type GameCommand =
       readonly heroId: HeroId;
       readonly position: Position;
       readonly facing: Facing;
+    }
+  | {
+      readonly type: 'draw-initial-noise';
+    }
+  | {
+      readonly type: 'place-initial-noise';
+      readonly position: Position;
     };
 
 export type GameEvent =
@@ -76,7 +94,20 @@ export type GameEvent =
       readonly position: Position;
       readonly facing: Facing;
     }
-  | { readonly type: 'deployment-complete' };
+  | { readonly type: 'deployment-complete' }
+  | { readonly type: 'noise-drawn' }
+  | { readonly type: 'noise-draw-consumed' }
+  | {
+      readonly type: 'noise-placed';
+      readonly position: Position;
+    }
+  | {
+      readonly type: 'noise-revealed';
+      readonly resultId: NoiseResultId;
+      readonly position: Position;
+    }
+  | { readonly type: 'initial-noise-complete' }
+  | { readonly type: 'hero-turn-started'; readonly round: number; readonly command: number };
 
 export interface CommandResult {
   readonly state: GameState;
@@ -92,14 +123,21 @@ export interface HeroGameView {
   readonly missionId: string;
   readonly setupStep: SetupStep;
   readonly mode: GameMode | null;
+  readonly round: number;
+  readonly phase: 'setup' | 'hero';
+  readonly command: number;
   readonly selectedHeroIds: readonly HeroId[];
   readonly heroes: readonly HeroState[];
   readonly noiseTokens: readonly PublicNoiseToken[];
+  readonly revealedNoise: readonly RevealedNoiseState[];
+  readonly initialNoiseDrawsResolved: number;
+  readonly initialNoiseCount: number;
   readonly remainingNoiseCount: number;
 }
 
 export interface SkavenGameView extends Omit<HeroGameView, 'noiseTokens'> {
   readonly noiseTokens: readonly ConcealedNoiseState[];
+  readonly pendingNoise: PendingNoiseState | null;
 }
 
 const freezePosition = (position: Position): Position =>
@@ -117,6 +155,9 @@ const freezeFeature = (feature: FeatureState): FeatureState =>
 const freezeNoise = (noise: ConcealedNoiseState): ConcealedNoiseState =>
   Object.freeze({ ...noise, position: freezePosition(noise.position) });
 
+const freezePendingNoise = (noise: PendingNoiseState): PendingNoiseState =>
+  Object.freeze({ ...noise });
+
 const freezeState = (state: GameState): GameState =>
   Object.freeze({
     ...state,
@@ -125,6 +166,8 @@ const freezeState = (state: GameState): GameState =>
     doors: Object.freeze(state.doors.map(freezeFeature)),
     nests: Object.freeze(state.nests.map(freezeFeature)),
     concealedNoise: Object.freeze(state.concealedNoise.map(freezeNoise)),
+    revealedNoise: Object.freeze(state.revealedNoise.map(freezeNoise)),
+    pendingNoise: state.pendingNoise ? freezePendingNoise(state.pendingNoise) : null,
     remainingNoiseBag: Object.freeze([...state.remainingNoiseBag]),
   });
 
@@ -182,6 +225,9 @@ export const createInitialGameState = (mission: MissionDefinition): GameState =>
     doors: mission.board.doors.map(position => ({ position, status: 'closed' as const })),
     nests: mission.board.nests.map(position => ({ position, status: 'intact' as const })),
     concealedNoise: [],
+    revealedNoise: [],
+    pendingNoise: null,
+    initialNoiseDrawsResolved: 0,
     remainingNoiseBag: mission.noiseBag,
   });
 
@@ -216,6 +262,51 @@ export const getLegalDeploymentPositions = (
   }
 
   return Object.freeze(positions);
+};
+
+const samePosition = (left: Position, right: Position) =>
+  left.row === right.row && left.column === right.column;
+
+export const getLegalNoiseSpawnPositions = (
+  state: GameState,
+  mission: MissionDefinition
+): readonly Position[] => {
+  assertMissionMatches(state, mission);
+  const occupied = [...state.concealedNoise, ...state.revealedNoise].map(noise => noise.position);
+  occupied.push(...state.heroes.flatMap(hero => (hero.position ? [hero.position] : [])));
+  return Object.freeze(
+    mission.board.spawns
+      .filter(spawn => !occupied.some(position => samePosition(position, spawn)))
+      .map(freezePosition)
+  );
+};
+
+const completeInitialNoiseIfReady = (
+  state: GameState,
+  mission: MissionDefinition,
+  events: readonly GameEvent[]
+): CommandResult => {
+  if (state.initialNoiseDrawsResolved < mission.initialNoiseCount) {
+    return Object.freeze({ state: freezeState(state), events: Object.freeze([...events]) });
+  }
+
+  const round = 1;
+  const command = state.command + 3;
+  return Object.freeze({
+    state: freezeState({
+      ...state,
+      setupStep: 'complete',
+      phase: 'hero',
+      round,
+      command,
+      pendingNoise: null,
+    }),
+    events: Object.freeze([
+      ...events,
+      Object.freeze({ type: 'initial-noise-complete' as const }),
+      Object.freeze({ type: 'hero-turn-started' as const, round, command }),
+    ]),
+  });
 };
 
 const configureGame = (
@@ -322,6 +413,132 @@ const deployHero = (
   return Object.freeze({ state: nextState, events });
 };
 
+const assertInitialNoiseStep = (state: GameState) => {
+  if (state.setupStep !== 'initial-noise') {
+    throw new RulesError(
+      'INVALID_SETUP_STEP',
+      'Initial noise can only be drawn and placed after hero deployment'
+    );
+  }
+};
+
+const drawInitialNoise = (
+  state: GameState,
+  mission: MissionDefinition,
+  randomSource: RandomSource
+): CommandResult => {
+  assertInitialNoiseStep(state);
+  if (state.pendingNoise) {
+    throw new RulesError(
+      'NOISE_ALREADY_DRAWN',
+      'Place the current noise result before drawing again'
+    );
+  }
+  if (state.initialNoiseDrawsResolved >= mission.initialNoiseCount) {
+    throw new RulesError('INITIAL_NOISE_COMPLETE', 'All initial noise draws are already resolved');
+  }
+
+  if (state.remainingNoiseBag.length === 0) {
+    return completeInitialNoiseIfReady(
+      { ...state, initialNoiseDrawsResolved: state.initialNoiseDrawsResolved + 1 },
+      mission,
+      [Object.freeze({ type: 'noise-draw-consumed' as const })]
+    );
+  }
+
+  const randomValue = randomSource.next();
+  if (!Number.isFinite(randomValue) || randomValue < 0 || randomValue >= 1) {
+    throw new RulesError(
+      'INVALID_RANDOM_VALUE',
+      'Random values must be finite numbers from 0 up to 1'
+    );
+  }
+  const drawIndex = Math.floor(randomValue * state.remainingNoiseBag.length);
+  const resultId = state.remainingNoiseBag[drawIndex]!;
+  const remainingNoiseBag = state.remainingNoiseBag.filter((_, index) => index !== drawIndex);
+
+  if (getLegalNoiseSpawnPositions(state, mission).length === 0) {
+    return completeInitialNoiseIfReady(
+      {
+        ...state,
+        remainingNoiseBag,
+        initialNoiseDrawsResolved: state.initialNoiseDrawsResolved + 1,
+      },
+      mission,
+      [Object.freeze({ type: 'noise-draw-consumed' as const })]
+    );
+  }
+
+  return Object.freeze({
+    state: freezeState({
+      ...state,
+      remainingNoiseBag,
+      pendingNoise: {
+        id: `noise-${String(state.initialNoiseDrawsResolved + 1)}`,
+        resultId,
+      },
+    }),
+    events: Object.freeze([Object.freeze({ type: 'noise-drawn' as const })]),
+  });
+};
+
+const placeInitialNoise = (
+  state: GameState,
+  command: Extract<GameCommand, { type: 'place-initial-noise' }>,
+  mission: MissionDefinition
+): CommandResult => {
+  assertInitialNoiseStep(state);
+  if (!state.pendingNoise) {
+    throw new RulesError('NO_NOISE_DRAWN', 'Draw a noise result before choosing its spawn');
+  }
+  const isSpawn = mission.board.spawns.some(spawn => samePosition(spawn, command.position));
+  if (!isSpawn) {
+    throw new RulesError('INVALID_NOISE_SPAWN', 'Place noise on a Skaven spawn square');
+  }
+  const isAvailable = getLegalNoiseSpawnPositions(state, mission).some(spawn =>
+    samePosition(spawn, command.position)
+  );
+  if (!isAvailable) {
+    throw new RulesError('NOISE_SPAWN_OCCUPIED', 'Noise tokens cannot share a spawn square');
+  }
+
+  const noise = freezeNoise({ ...state.pendingNoise, position: command.position });
+  const closedDoors = state.doors
+    .filter(door => door.status === 'closed')
+    .map(door => door.position);
+  const revealed = state.heroes.some(
+    hero =>
+      hero.position && hasLineOfSight(mission.board, hero.position, command.position, closedDoors)
+  );
+  const events: GameEvent[] = [
+    Object.freeze({ type: 'noise-placed' as const, position: freezePosition(command.position) }),
+  ];
+  if (revealed) {
+    events.push(
+      Object.freeze({
+        type: 'noise-revealed' as const,
+        resultId: noise.resultId,
+        position: freezePosition(command.position),
+      })
+    );
+  }
+
+  return completeInitialNoiseIfReady(
+    {
+      ...state,
+      pendingNoise: null,
+      initialNoiseDrawsResolved: state.initialNoiseDrawsResolved + 1,
+      concealedNoise: revealed ? state.concealedNoise : [...state.concealedNoise, noise],
+      revealedNoise:
+        revealed && noise.resultId !== 'nothing'
+          ? [...state.revealedNoise, noise]
+          : state.revealedNoise,
+    },
+    mission,
+    events
+  );
+};
+
 export const resolveCommand = (
   state: GameState,
   command: GameCommand,
@@ -329,12 +546,15 @@ export const resolveCommand = (
 ): CommandResult => {
   const mission = getMissionDefinition(state.missionId);
   assertMissionMatches(state, mission);
-  void randomSource;
   switch (command.type) {
     case 'configure-game':
       return configureGame(state, command, mission);
     case 'deploy-hero':
       return deployHero(state, command, mission);
+    case 'draw-initial-noise':
+      return drawInitialNoise(state, mission, randomSource);
+    case 'place-initial-noise':
+      return placeInitialNoise(state, command, mission);
     default:
       throw new RulesError(
         'INVALID_COMMAND',
@@ -348,6 +568,9 @@ export const projectHeroView = (state: GameState): HeroGameView =>
     missionId: state.missionId,
     setupStep: state.setupStep,
     mode: state.mode,
+    round: state.round,
+    phase: state.phase,
+    command: state.command,
     selectedHeroIds: Object.freeze([...state.selectedHeroIds]),
     heroes: Object.freeze(state.heroes.map(freezeHero)),
     noiseTokens: Object.freeze(
@@ -355,6 +578,9 @@ export const projectHeroView = (state: GameState): HeroGameView =>
         Object.freeze({ id: noise.id, position: freezePosition(noise.position) })
       )
     ),
+    revealedNoise: Object.freeze(state.revealedNoise.map(freezeNoise)),
+    initialNoiseDrawsResolved: state.initialNoiseDrawsResolved,
+    initialNoiseCount: getMissionDefinition(state.missionId).initialNoiseCount,
     remainingNoiseCount: state.remainingNoiseBag.length,
   });
 
@@ -363,8 +589,15 @@ export const projectSkavenView = (state: GameState): SkavenGameView =>
     missionId: state.missionId,
     setupStep: state.setupStep,
     mode: state.mode,
+    round: state.round,
+    phase: state.phase,
+    command: state.command,
     selectedHeroIds: Object.freeze([...state.selectedHeroIds]),
     heroes: Object.freeze(state.heroes.map(freezeHero)),
     noiseTokens: Object.freeze(state.concealedNoise.map(freezeNoise)),
+    revealedNoise: Object.freeze(state.revealedNoise.map(freezeNoise)),
+    pendingNoise: state.pendingNoise ? freezePendingNoise(state.pendingNoise) : null,
+    initialNoiseDrawsResolved: state.initialNoiseDrawsResolved,
+    initialNoiseCount: getMissionDefinition(state.missionId).initialNoiseCount,
     remainingNoiseCount: state.remainingNoiseBag.length,
   });

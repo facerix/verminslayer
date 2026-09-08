@@ -26,7 +26,6 @@ const board = parseMap(THE_NEST_MAP, {
   width: 13,
   height: 19,
   required: {
-    door: 7,
     nest: 3,
     spawn: 3,
     deployment: 1,

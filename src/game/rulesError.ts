@@ -12,7 +12,13 @@ export type RulesErrorCode =
   | 'HERO_NOT_SELECTED'
   | 'HERO_ALREADY_DEPLOYED'
   | 'INVALID_DEPLOYMENT_SQUARE'
-  | 'DEPLOYMENT_OCCUPIED';
+  | 'DEPLOYMENT_OCCUPIED'
+  | 'NOISE_ALREADY_DRAWN'
+  | 'NO_NOISE_DRAWN'
+  | 'INVALID_NOISE_SPAWN'
+  | 'NOISE_SPAWN_OCCUPIED'
+  | 'INITIAL_NOISE_COMPLETE'
+  | 'INVALID_RANDOM_VALUE';
 
 export class RulesError extends Error {
   readonly code: RulesErrorCode;

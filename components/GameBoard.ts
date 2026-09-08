@@ -1,5 +1,5 @@
 import { renderBoard } from '/src/canvas/boardRenderer.js';
-import type { BoardHeroPresentation } from '/src/canvas/boardRenderer.js';
+import type { BoardHeroPresentation, BoardNoisePresentation } from '/src/canvas/boardRenderer.js';
 import { pointToSquare } from '/src/canvas/boardGeometry.js';
 import type { BoardGeometry } from '/src/canvas/boardGeometry.js';
 import { h } from '/src/domUtils.js';
@@ -55,6 +55,7 @@ export class GameBoard extends HTMLElement {
   readonly #resizeObserver: ResizeObserver;
   #geometry: BoardGeometry | null = null;
   #heroes: readonly BoardHeroPresentation[] = [];
+  #noiseTokens: readonly BoardNoisePresentation[] = [];
   #legalSquares: readonly Position[] = [];
 
   constructor() {
@@ -68,7 +69,7 @@ export class GameBoard extends HTMLElement {
       id: 'board-description',
       className: 'description',
       textContent:
-        'The Nest board: 13 columns by 19 rows, with six doors, three nests, three Skaven spawn points, one hero deployment point, and a locked south exit.',
+        'The Nest board: 13 columns by 19 rows, with doors, three nests, three Skaven spawn points, one hero deployment point, and a locked south exit.',
     });
     this.#frame = h('div', { className: 'board-frame' }, [this.#canvas, description]);
     shadow.append(h('style', { textContent: STYLES }), this.#frame);
@@ -85,6 +86,12 @@ export class GameBoard extends HTMLElement {
   set legalSquares(positions: readonly Position[]) {
     this.#legalSquares = positions;
     this.#canvas.classList.toggle('is-interactive', positions.length > 0);
+    this.#draw();
+  }
+
+  set noiseTokens(tokens: readonly BoardNoisePresentation[]) {
+    this.#noiseTokens = tokens;
+    this.#updateDescription();
     this.#draw();
   }
 
@@ -110,6 +117,7 @@ export class GameBoard extends HTMLElement {
     context.setTransform(pixelRatio, 0, 0, pixelRatio, 0, 0);
     this.#geometry = renderBoard(context, THE_NEST.board, width, height, {
       heroes: this.#heroes,
+      noiseTokens: this.#noiseTokens,
       legalSquares: this.#legalSquares,
     });
   }
@@ -149,9 +157,26 @@ export class GameBoard extends HTMLElement {
           )
           .join('; ')}.`
       : '';
+    const concealedNoise = this.#noiseTokens.filter(token => !token.revealedLabel);
+    const revealedNoise = this.#noiseTokens.filter(token => token.revealedLabel);
+    const noise = concealedNoise.length
+      ? ` Face-down noise tokens: ${concealedNoise
+          .map(token => `row ${token.position.row + 1}, column ${token.position.column + 1}`)
+          .join('; ')}.`
+      : '';
+    const reveals = revealedNoise.length
+      ? ` Revealed noise: ${revealedNoise
+          .map(
+            token =>
+              `${token.accessibleLabel ?? token.revealedLabel} at row ${token.position.row + 1}, column ${token.position.column + 1}`
+          )
+          .join('; ')}.`
+      : '';
     description.textContent =
-      'The Nest board: 13 columns by 19 rows, with six doors, three nests, three Skaven spawn points, one hero deployment point, and a locked south exit.' +
-      heroes;
+      'The Nest board: 13 columns by 19 rows, with doors, three nests, three Skaven spawn points, one hero deployment point, and a locked south exit.' +
+      heroes +
+      noise +
+      reveals;
   }
 }
 

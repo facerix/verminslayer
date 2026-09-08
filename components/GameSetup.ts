@@ -7,8 +7,10 @@ import type {
   GameEvent,
   GameMode,
   HeroGameView,
+  SkavenGameView,
 } from '/src/game/gameState.js';
 import type { Position } from '/src/game/map.js';
+import type { NoiseResultId } from '/src/game/missionDefinition.js';
 
 const STYLES = `
   :host {
@@ -169,6 +171,33 @@ const STYLES = `
     background: #231d19;
   }
 
+  .handoff {
+    position: fixed;
+    inset: 0;
+    z-index: 1000;
+    display: grid;
+    place-content: center;
+    justify-items: center;
+    padding: 2rem;
+    background: #171310;
+    text-align: center;
+  }
+
+  .handoff > * {
+    width: min(100%, 32rem);
+  }
+
+  .private-result {
+    padding: 1rem;
+    border: 2px solid #d9a849;
+    border-radius: 0.35rem;
+    background: #171310;
+    color: #f3d38b;
+    font-size: 1.35rem;
+    font-weight: 700;
+    text-align: center;
+  }
+
   .error {
     min-height: 1.4em;
     margin: 0;
@@ -206,8 +235,17 @@ const modeOption = (value: GameMode, title: string, detail: string, checked: boo
 
 const facingLabel = (facing: Facing) => facing[0]!.toUpperCase() + facing.slice(1);
 
+const NOISE_RESULT_NAMES: Readonly<Record<NoiseResultId, string>> = Object.freeze({
+  'two-clanrats': 'Two Clanrats',
+  'three-clanrats': 'Three Clanrats',
+  'gutter-runner': 'Gutter Runner',
+  'rat-ogor': 'Rat Ogor',
+  nothing: 'Nothing',
+});
+
 export class GameSetup extends HTMLElement {
   #view: HeroGameView | null = null;
+  #privateNoiseView: SkavenGameView | null = null;
   #error = '';
   #announcement = '';
 
@@ -218,6 +256,13 @@ export class GameSetup extends HTMLElement {
 
   set view(view: HeroGameView) {
     this.#view = view;
+    this.#privateNoiseView = null;
+    this.#error = '';
+    this.#render();
+  }
+
+  set privateNoiseView(view: SkavenGameView | null) {
+    this.#privateNoiseView = view;
     this.#error = '';
     this.#render();
   }
@@ -253,6 +298,16 @@ export class GameSetup extends HTMLElement {
       this.#announcement = `${heroName} deployed at row ${latest.position.row + 1}, column ${latest.position.column + 1}, facing ${latest.facing}.`;
     } else if (latest?.type === 'deployment-complete') {
       this.#announcement = 'Hero deployment complete. Initial noise setup is next.';
+    } else if (latest?.type === 'hero-turn-started') {
+      this.#announcement = `Initial noise setup complete. Hero Turn ${latest.round} begins with ${latest.command} Command.`;
+    } else if (latest?.type === 'noise-drawn') {
+      this.#announcement = 'A private noise result was drawn.';
+    } else if (latest?.type === 'noise-placed') {
+      this.#announcement = `Noise placed at row ${latest.position.row + 1}, column ${latest.position.column + 1}.`;
+    } else if (latest?.type === 'noise-revealed') {
+      this.#announcement = `${NOISE_RESULT_NAMES[latest.resultId]} revealed at row ${latest.position.row + 1}, column ${latest.position.column + 1}.`;
+    } else if (latest?.type === 'noise-draw-consumed') {
+      this.#announcement = 'The noise draw was consumed because no spawn was available.';
     }
   }
 
@@ -368,20 +423,74 @@ export class GameSetup extends HTMLElement {
     ]);
   }
 
-  #renderComplete(): HTMLElement {
-    const mode = this.#view?.mode === 'two-player' ? 'Two-player game' : 'Solo game';
+  #renderInitialNoise(): HTMLElement {
+    if (this.#privateNoiseView?.pendingNoise) {
+      const result = this.#privateNoiseView.pendingNoise;
+      return h('div', { className: 'complete' }, [
+        h('div', {}, [
+          h('p', { className: 'eyebrow', textContent: 'Skaven setup · private' }),
+          h('h2', {
+            textContent: `Place noise ${this.#privateNoiseView.initialNoiseDrawsResolved + 1} of ${this.#privateNoiseView.initialNoiseCount}`,
+          }),
+          h('p', {
+            textContent:
+              'Keep this result hidden from the Hero player. Select a highlighted Skaven spawn on the board.',
+          }),
+        ]),
+        h('p', {
+          className: 'private-result',
+          textContent: NOISE_RESULT_NAMES[result.resultId],
+        }),
+      ]);
+    }
+
+    if (this.#view?.mode === 'two-player') {
+      const button = h('button', {
+        type: 'button',
+        textContent: 'I am the Skaven player',
+      });
+      button.addEventListener('click', () => this.#dispatchCommand({ type: 'draw-initial-noise' }));
+      return h('div', { className: 'handoff' }, [
+        h('p', { className: 'eyebrow', textContent: 'Pass the device' }),
+        h('h2', { textContent: 'Skaven player only' }),
+        h('p', {
+          textContent:
+            'The next screen contains concealed noise identities. Hand the device to the Skaven player before continuing.',
+        }),
+        button,
+      ]);
+    }
+
+    const button = h('button', {
+      type: 'button',
+      textContent: 'Place initial noise',
+    });
+    button.addEventListener('click', () => this.#dispatchCommand({ type: 'draw-initial-noise' }));
     return h('div', { className: 'complete' }, [
       h('div', {}, [
         h('p', { className: 'eyebrow', textContent: 'Deployment complete' }),
         h('h2', { textContent: 'Ready for the horde' }),
         h('p', {
-          textContent: `${mode} configured with ${this.#view?.heroes.length ?? 0} deployed hero${this.#view?.heroes.length === 1 ? '' : 'es'}.`,
+          textContent:
+            'The Skaven AI will privately draw three results and place their face-down noise tokens.',
+        }),
+      ]),
+      button,
+    ]);
+  }
+
+  #renderHeroTurn(): HTMLElement {
+    return h('div', { className: 'complete' }, [
+      h('div', {}, [
+        h('p', { className: 'eyebrow', textContent: `Round ${this.#view?.round ?? 1}` }),
+        h('h2', { textContent: 'Hero turn' }),
+        h('p', {
+          textContent: `Initial noise is in position. The company begins with ${this.#view?.command ?? 3} Command.`,
         }),
       ]),
       h('p', {
         className: 'callout',
-        textContent:
-          'The engine has advanced to initial-noise setup. Private noise drawing and placement begin in the next reviewable slice.',
+        textContent: 'Hero activation actions begin in the next reviewable slice.',
       }),
     ]);
   }
@@ -393,8 +502,10 @@ export class GameSetup extends HTMLElement {
       this.#view?.setupStep === 'deploy-heroes'
         ? this.#renderDeployment()
         : this.#view?.setupStep === 'initial-noise'
-          ? this.#renderComplete()
-          : this.#renderSelection();
+          ? this.#renderInitialNoise()
+          : this.#view?.setupStep === 'complete'
+            ? this.#renderHeroTurn()
+            : this.#renderSelection();
     shadow.replaceChildren(
       h('style', { textContent: STYLES }),
       content,

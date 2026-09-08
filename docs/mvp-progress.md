@@ -8,25 +8,26 @@ from Git history.
 
 ## Current status
 
-The second reviewable slice, **game setup and hero deployment**, is complete in the
-working tree. Players can configure solo or two-player mode, select 1–5 heroes, and deploy
-them with facing through the responsive Canvas. The immutable engine advances to the
-initial-noise boundary after the final hero is placed. Noise placement, turns, combat, AI,
-abilities, and victory resolution remain to be implemented.
+The third reviewable slice, **initial noise setup and privacy**, is complete in the working
+tree. The engine draws and places three noise results without replacement, preserves their
+identities across the hero/Skaven projection boundary, handles blocked draws and immediate
+LOS reveals, and begins Hero Turn 1 with 3 Command. Solo and shared-device two-player setup
+both work through the responsive Canvas.
 
 | Slice | Status | Outcome |
 | --- | --- | --- |
 | 1. Map foundation and board preview | Complete | Validated The Nest map and responsive Canvas rendering |
 | 2. Game setup and hero deployment | Complete | Mode/roster selection, immutable initial state, legal Canvas deployment, and public projections |
-| 3. Initial noise setup and privacy | Proposed next | Draw/place three concealed results and hand off to the first Hero turn |
-| 4+. Rules-enforced play | Not started | Movement, combat, turns, abilities, AI, and mission resolution |
+| 3. Initial noise setup and privacy | Complete | Private draw/placement, solo setup AI, face-down tokens, LOS reveals, and Hero Turn 1 handoff |
+| 4. Hero activation and movement | Proposed next | Activation order, Action spending, legal paths, facing, doors, and phase completion |
+| 5+. Rules-enforced play | Not started | Combat, abilities, Skaven AI, noise movement, and mission resolution |
 
 ## Completed in slice 1
 
 - Added an immutable ASCII map parser with typed errors for invalid height, width,
   symbols, and required feature counts.
-- Encoded The Nest as a 13-column by 19-row mission map and validated its six doors,
-  three nests, three Skaven spawns, deployment point, and exit at module startup.
+- Encoded The Nest as a 13-column by 19-row mission map and validated its three nests,
+  three Skaven spawns, deployment point, and exit at module startup.
 - Replaced the south-wall square at rules coordinate row 19, column 2 with the locked
   Watch Post exit (`E`).
 - Added pure Canvas geometry for board fitting and point-to-square hit mapping.
@@ -76,19 +77,45 @@ abilities, and victory resolution remain to be implemented.
 - Cached every new compiled module through `sw-resources.js` and corrected app-shell
   scrolling so controls remain reachable at the tablet breakpoint.
 
+## Completed in slice 3
+
+- Added square-center supercover line tracing that includes both orthogonal squares at an
+  exact corner, with walls, rubble, the locked exit, and closed doors blocking LOS while
+  water and open doors do not.
+- Added immutable pending, concealed, and revealed noise state plus three setup draws
+  without replacement through the injected `RandomSource`.
+- Rejected invalid draw/placement sequencing, invalid randomness, non-spawn placement,
+  occupied spawns, and post-setup commands without partially changing state.
+- Kept pending and concealed identities absent from hero projections while exposing them
+  to the Skaven projection; even a drawn `Nothing` remains an ordinary face-down token
+  until it is revealed.
+- Added a full-screen two-player handoff cover and one-result-at-a-time private Skaven
+  placement. The previous private identity leaves the DOM before the next is shown.
+- Added solo setup placement through the same ordinary draw/place command validation path,
+  without putting concealed identities in the hero DOM, Canvas model, or accessible board
+  description.
+- Rendered face-down noise tokens and legal spawn highlights on the Canvas, recorded
+  immediate LOS reveals publicly, and consumed draws when every spawn is occupied.
+- Transitioned the immutable engine to Round 1, Hero phase, with 3 Command after all three
+  setup draws resolve.
+- Removed the brittle exact-door-count invariant after the map gained a recent additional
+  door; nests, spawns, deployment, and exit remain validated gameplay invariants.
+
 ## Verification baseline
 
-At the end of slice 2:
+At the end of slice 3:
 
 - `pnpm format` passed.
 - `pnpm lint` passed with zero warnings and errors.
 - `pnpm typecheck` passed.
-- `pnpm test` passed all 50 tests.
+- `pnpm test` passed all 66 tests.
 - `pnpm build` completed successfully.
-- A two-player desktop flow selected the default roster, deployed both heroes through
-  Canvas clicks with different facings, and reached the initial-noise boundary.
-- A 700 × 900 tablet flow stacked the board above reachable controls without horizontal
-  overflow and accepted Canvas deployment after scrolling.
+- A two-player desktop flow deployed a hero, covered the screen for role handoff, privately
+  drew and placed all three results, rendered three face-down Canvas tokens, and reached
+  Hero Turn 1 without identities appearing in the public board description.
+- A solo 700 × 900 tablet flow stacked the board above reachable controls without
+  horizontal overflow, accepted Canvas deployment after scrolling, privately placed all
+  three tokens through the AI path, and reached Hero Turn 1.
 - Canvas backing dimensions matched its CSS dimensions at the browser's device pixel
   ratio.
 - The application produced no browser console errors.
@@ -105,17 +132,16 @@ At the end of slice 2:
 
 ## Proposed next slice
 
-Implement initial noise setup and its privacy boundary:
+Implement the Hero-turn activation and movement foundation:
 
-1. Add square-center supercover line of sight with strict blocking corners, plus focused
-   terrain/LOS tests needed for immediate noise reveals.
-2. Draw three results without replacement through the injected `RandomSource`.
-3. In two-player mode, show a role-handoff cover, reveal one result only to the Skaven
-   player, and let them choose an empty spawn for it before drawing the next.
-4. In solo mode, choose spawn squares without exposing identities in the hero DOM or
-   Canvas.
-5. Render placed tokens face down, resolve immediate reveal when a spawn is in hero LOS,
-   and consume draws when every spawn is occupied.
-6. Transition cleanly to the first Hero turn after all three setup draws are resolved.
+1. Track living, non-exited hero activation status and 4 Actions per activation.
+2. Let the Hero player choose activation order and require confirmation before ending an
+   activation early or ending the phase.
+3. Add orthogonal pathfinding with terrain, doors, model occupancy, and Move allowance.
+4. Apply movement one square at a time, allow one facing change including a zero-square
+   Move, and expose legal paths/targets through public projections.
+5. Add closed-door open/close interactions and their immediate movement/LOS effects.
+6. Transition to the first Skaven turn after every eligible hero has activated.
 
-Do not add general Skaven noise movement, hero activation actions, or combat in this slice.
+Do not add combat, Guard, hero abilities, general noise movement, or Skaven AI in this
+slice.

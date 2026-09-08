@@ -5,6 +5,7 @@ import type { HeroId } from '../../src/game/entities.ts';
 import {
   createInitialGameState,
   getLegalDeploymentPositions,
+  getLegalNoiseSpawnPositions,
   projectHeroView,
   projectSkavenView,
   resolveCommand,
@@ -23,6 +24,24 @@ const configure = (heroIds: readonly HeroId[] = ['gotrek', 'felix']) =>
     { type: 'configure-game', mode: 'solo', heroIds },
     randomSource
   ).state;
+
+const deploy = (mode: 'solo' | 'two-player' = 'solo') => {
+  const configured = resolveCommand(
+    createInitialGameState(THE_NEST),
+    { type: 'configure-game', mode, heroIds: ['gotrek'] },
+    randomSource
+  ).state;
+  return resolveCommand(
+    configured,
+    {
+      type: 'deploy-hero',
+      heroId: 'gotrek',
+      position: { row: 16, column: 3 },
+      facing: 'north',
+    },
+    randomSource
+  ).state;
+};
 
 test('initial setup defaults to Gotrek and Felix without starting the game', () => {
   const state = createInitialGameState(THE_NEST);
@@ -279,4 +298,201 @@ test('hero projection omits concealed identities while Skaven projection include
   assert.deepEqual(heroView.noiseTokens, [{ id: 'noise-1', position: { row: 0, column: 10 } }]);
   assert.ok(!JSON.stringify(heroView).includes('rat-ogor'));
   assert.equal(skavenView.noiseTokens[0]?.resultId, 'rat-ogor');
+});
+
+test('initial noise draws one private result without replacement', () => {
+  const result = resolveCommand(
+    deploy('two-player'),
+    { type: 'draw-initial-noise' },
+    { next: () => 0 }
+  );
+
+  assert.equal(result.state.remainingNoiseBag.length, 19);
+  assert.equal(result.state.pendingNoise?.resultId, 'two-clanrats');
+  assert.deepEqual(result.events, [{ type: 'noise-drawn' }]);
+  assert.ok(!JSON.stringify(projectHeroView(result.state)).includes('two-clanrats'));
+  assert.equal(projectSkavenView(result.state).pendingNoise?.resultId, 'two-clanrats');
+});
+
+test('initial noise placement accepts only an empty Skaven spawn', () => {
+  const drawn = resolveCommand(
+    deploy('two-player'),
+    { type: 'draw-initial-noise' },
+    { next: () => 0 }
+  ).state;
+
+  assert.throws(
+    () =>
+      resolveCommand(
+        drawn,
+        { type: 'place-initial-noise', position: { row: 1, column: 1 } },
+        randomSource
+      ),
+    (error: unknown) => error instanceof RulesError && error.code === 'INVALID_NOISE_SPAWN'
+  );
+
+  const placed = resolveCommand(
+    drawn,
+    { type: 'place-initial-noise', position: THE_NEST.board.spawns[0]! },
+    randomSource
+  ).state;
+  const drawnAgain = resolveCommand(
+    placed,
+    { type: 'draw-initial-noise' },
+    { next: () => 0 }
+  ).state;
+  assert.throws(
+    () =>
+      resolveCommand(
+        drawnAgain,
+        { type: 'place-initial-noise', position: THE_NEST.board.spawns[0]! },
+        randomSource
+      ),
+    (error: unknown) => error instanceof RulesError && error.code === 'NOISE_SPAWN_OCCUPIED'
+  );
+});
+
+test('three resolved setup draws begin Hero Turn 1 with 3 Command', () => {
+  let state = deploy('two-player');
+
+  for (const spawn of THE_NEST.board.spawns) {
+    state = resolveCommand(state, { type: 'draw-initial-noise' }, { next: () => 0 }).state;
+    state = resolveCommand(
+      state,
+      { type: 'place-initial-noise', position: spawn },
+      randomSource
+    ).state;
+  }
+
+  assert.equal(state.setupStep, 'complete');
+  assert.equal(state.phase, 'hero');
+  assert.equal(state.round, 1);
+  assert.equal(state.command, 3);
+  assert.equal(state.initialNoiseDrawsResolved, 3);
+  assert.equal(state.concealedNoise.length, 3);
+});
+
+test('nothing remains concealed as an ordinary face-down token until revealed', () => {
+  const drawn = resolveCommand(
+    deploy('two-player'),
+    { type: 'draw-initial-noise' },
+    { next: () => 0.999_999 }
+  ).state;
+  const spawn = THE_NEST.board.spawns[0]!;
+  const placed = resolveCommand(
+    drawn,
+    { type: 'place-initial-noise', position: spawn },
+    randomSource
+  ).state;
+
+  assert.equal(drawn.pendingNoise?.resultId, 'nothing');
+  assert.equal(placed.concealedNoise[0]?.resultId, 'nothing');
+  assert.equal(placed.initialNoiseDrawsResolved, 1);
+  assert.ok(!JSON.stringify(projectHeroView(placed)).includes('nothing'));
+  assert.ok(
+    !getLegalNoiseSpawnPositions(placed, THE_NEST).some(
+      position => position.row === spawn.row && position.column === spawn.column
+    )
+  );
+});
+
+test('a draw is consumed when every spawn is occupied', () => {
+  const base = deploy('two-player');
+  const occupied: GameState = {
+    ...base,
+    initialNoiseDrawsResolved: 2,
+    concealedNoise: Object.freeze(
+      THE_NEST.board.spawns.map((position, index) =>
+        Object.freeze({ id: `noise-${index + 1}`, resultId: 'two-clanrats' as const, position })
+      )
+    ),
+  };
+  const result = resolveCommand(occupied, { type: 'draw-initial-noise' }, { next: () => 0 });
+
+  assert.equal(result.state.initialNoiseDrawsResolved, 3);
+  assert.equal(result.state.remainingNoiseBag.length, 19);
+  assert.equal(result.state.pendingNoise, null);
+  assert.equal(result.state.phase, 'hero');
+  assert.deepEqual(
+    result.events.map(event => event.type),
+    ['noise-draw-consumed', 'initial-noise-complete', 'hero-turn-started']
+  );
+});
+
+test('noise placed in hero line of sight reveals immediately', () => {
+  const base = deploy('two-player');
+  const spawn = THE_NEST.board.spawns[0]!;
+  const exposed: GameState = {
+    ...base,
+    heroes: Object.freeze([
+      Object.freeze({
+        ...base.heroes[0]!,
+        position: Object.freeze({ row: 1, column: 10 }),
+      }),
+    ]),
+  };
+  const drawn = resolveCommand(exposed, { type: 'draw-initial-noise' }, { next: () => 0 }).state;
+  const result = resolveCommand(
+    drawn,
+    { type: 'place-initial-noise', position: spawn },
+    randomSource
+  );
+
+  assert.deepEqual(result.state.concealedNoise, []);
+  assert.equal(result.state.revealedNoise[0]?.resultId, 'two-clanrats');
+  assert.ok(JSON.stringify(projectHeroView(result.state)).includes('two-clanrats'));
+  assert.deepEqual(
+    result.events.map(event => event.type),
+    ['noise-placed', 'noise-revealed']
+  );
+});
+
+test('noise commands reject invalid sequencing transactionally', () => {
+  const state = deploy('two-player');
+  const before = JSON.stringify(state);
+
+  assert.throws(
+    () =>
+      resolveCommand(
+        state,
+        { type: 'place-initial-noise', position: THE_NEST.board.spawns[0]! },
+        randomSource
+      ),
+    (error: unknown) => error instanceof RulesError && error.code === 'NO_NOISE_DRAWN'
+  );
+  assert.equal(JSON.stringify(state), before);
+
+  const drawn = resolveCommand(state, { type: 'draw-initial-noise' }, { next: () => 0 }).state;
+  assert.throws(
+    () => resolveCommand(drawn, { type: 'draw-initial-noise' }, { next: () => 0 }),
+    (error: unknown) => error instanceof RulesError && error.code === 'NOISE_ALREADY_DRAWN'
+  );
+});
+
+test('noise placement treats a hero-occupied spawn as unavailable', () => {
+  const base = deploy('two-player');
+  const spawn = THE_NEST.board.spawns[0]!;
+  const occupied: GameState = {
+    ...base,
+    heroes: Object.freeze([
+      Object.freeze({ ...base.heroes[0]!, position: Object.freeze({ ...spawn }) }),
+    ]),
+  };
+
+  assert.ok(
+    !getLegalNoiseSpawnPositions(occupied, THE_NEST).some(
+      position => Object.is(position.row, spawn.row) && Object.is(position.column, spawn.column)
+    )
+  );
+});
+
+test('invalid randomness rejects a draw without consuming the bag', () => {
+  const state = deploy('two-player');
+  const before = JSON.stringify(state);
+
+  assert.throws(
+    () => resolveCommand(state, { type: 'draw-initial-noise' }, { next: () => 1 }),
+    (error: unknown) => error instanceof RulesError && error.code === 'INVALID_RANDOM_VALUE'
+  );
+  assert.equal(JSON.stringify(state), before);
 });

@@ -1,7 +1,9 @@
 import {
   createInitialGameState,
   getLegalDeploymentPositions,
+  getLegalNoiseSpawnPositions,
   projectHeroView,
+  projectSkavenView,
   resolveCommand,
 } from '/src/game/gameState.js';
 import type {
@@ -10,6 +12,7 @@ import type {
   GameState,
   HeroGameView,
   RandomSource,
+  SkavenGameView,
 } from '/src/game/gameState.js';
 import type { Position } from '/src/game/map.js';
 import type { MissionDefinition } from '/src/game/missionDefinition.js';
@@ -34,8 +37,16 @@ export class GameSession {
     return projectHeroView(this.#state);
   }
 
+  get skavenView(): SkavenGameView {
+    return projectSkavenView(this.#state);
+  }
+
   get legalDeploymentPositions(): readonly Position[] {
     return getLegalDeploymentPositions(this.#state, this.#mission);
+  }
+
+  get legalNoiseSpawnPositions(): readonly Position[] {
+    return getLegalNoiseSpawnPositions(this.#state, this.#mission);
   }
 
   dispatch(command: GameCommand): readonly GameEvent[] {

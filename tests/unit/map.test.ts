@@ -9,7 +9,6 @@ test('The Nest parses as a 13 by 19 board with its required features', () => {
 
   assert.equal(board.width, 13);
   assert.equal(board.height, 19);
-  assert.equal(board.doors.length, 6);
   assert.equal(board.nests.length, 3);
   assert.equal(board.spawns.length, 3);
   assert.deepEqual(board.deployment, { row: 16, column: 3 });

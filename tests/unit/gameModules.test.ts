@@ -5,8 +5,14 @@ import type { BoardHeroPresentation } from '../../src/canvas/boardRenderer.ts';
 import { createGameEventDelegate } from '../../src/game/gameModule.ts';
 import type { GameModule } from '../../src/game/gameModule.ts';
 import { SetupGameModule } from '../../src/game/modules/setup.ts';
+import { InitialNoiseGameModule } from '../../src/game/modules/initialNoise.ts';
 import { GameSession } from '../../src/game/gameSession.ts';
-import type { GameEvent, HeroGameView, RandomSource } from '../../src/game/gameState.ts';
+import type {
+  GameEvent,
+  HeroGameView,
+  RandomSource,
+  SkavenGameView,
+} from '../../src/game/gameState.ts';
 import type { Position } from '../../src/game/map.ts';
 import { THE_NEST } from '../../src/game/missions/theNest.ts';
 
@@ -14,6 +20,7 @@ const randomSource: RandomSource = Object.freeze({ next: () => 0.5 });
 
 class SetupViewSpy {
   #view: HeroGameView | null = null;
+  #privateNoiseView: SkavenGameView | null = null;
   announced: readonly GameEvent[] = [];
   error = '';
   deployment: Position | null = null;
@@ -25,6 +32,19 @@ class SetupViewSpy {
 
   set view(view: HeroGameView) {
     this.#view = view;
+    this.#privateNoiseView = null;
+  }
+
+  get privateNoiseView(): SkavenGameView | null {
+    return this.#privateNoiseView;
+  }
+
+  set privateNoiseView(view: SkavenGameView | null) {
+    this.#privateNoiseView = view;
+  }
+
+  getPrivateNoiseView(): SkavenGameView | null {
+    return this.#privateNoiseView;
   }
 
   get renderedView(): HeroGameView | null {
@@ -47,7 +67,18 @@ class SetupViewSpy {
 class BoardViewSpy {
   heroes: readonly BoardHeroPresentation[] = [];
   legalSquares: readonly Position[] = [];
+  noiseTokens: readonly { readonly position: Position; readonly revealedLabel?: string }[] = [];
 }
+
+const deploySingleHero = (session: GameSession, mode: 'solo' | 'two-player') => {
+  session.dispatch({ type: 'configure-game', mode, heroIds: ['gotrek'] });
+  session.dispatch({
+    type: 'deploy-hero',
+    heroId: 'gotrek',
+    position: { row: 16, column: 3 },
+    facing: 'north',
+  });
+};
 
 test('the setup module renders setup state and handles setup commands', () => {
   const setup = new SetupViewSpy();
@@ -181,4 +212,72 @@ test('the event delegate stops at the module that handles an event and rejects g
   delegate(new Event('game-command'));
   assert.deepEqual(calls, ['first']);
   assert.throws(() => delegate(new Event('unclaimed-event')), /No game module handled/);
+});
+
+test('two-player initial noise reveals one private draw and advances after each placement', () => {
+  const session = new GameSession(THE_NEST, { next: () => 0 });
+  deploySingleHero(session, 'two-player');
+  const setup = new SetupViewSpy();
+  const board = new BoardViewSpy();
+  const module = new InitialNoiseGameModule({
+    session,
+    setup,
+    board,
+    randomSource,
+  });
+
+  module.render();
+  assert.equal(setup.view.setupStep, 'initial-noise');
+  assert.equal(setup.privateNoiseView, null);
+
+  module.handleEvent(new CustomEvent('game-command', { detail: { type: 'draw-initial-noise' } }));
+  assert.equal(setup.getPrivateNoiseView()?.pendingNoise?.resultId, 'two-clanrats');
+  assert.equal(board.legalSquares.length, 3);
+  assert.ok(!JSON.stringify(setup.view).includes('two-clanrats'));
+
+  module.handleEvent(
+    new CustomEvent('board-square-selected', { detail: THE_NEST.board.spawns[0]! })
+  );
+  assert.equal(board.noiseTokens.length, 1);
+  assert.equal(board.legalSquares.length, 2);
+  assert.equal(setup.getPrivateNoiseView()?.pendingNoise?.resultId, 'two-clanrats');
+});
+
+test('two-player initial noise completes after three board placements', () => {
+  const session = new GameSession(THE_NEST, { next: () => 0 });
+  deploySingleHero(session, 'two-player');
+  const setup = new SetupViewSpy();
+  const board = new BoardViewSpy();
+  const module = new InitialNoiseGameModule({ session, setup, board, randomSource });
+
+  module.handleEvent(new CustomEvent('game-command', { detail: { type: 'draw-initial-noise' } }));
+  for (const spawn of THE_NEST.board.spawns) {
+    module.handleEvent(new CustomEvent('board-square-selected', { detail: spawn }));
+  }
+
+  assert.equal(session.heroView.phase, 'hero');
+  assert.equal(setup.view.phase, 'hero');
+  assert.equal(setup.privateNoiseView, null);
+  assert.equal(board.noiseTokens.length, 3);
+  assert.deepEqual(board.legalSquares, []);
+});
+
+test('solo initial noise uses ordinary commands without rendering a private identity', () => {
+  const session = new GameSession(THE_NEST, { next: () => 0 });
+  deploySingleHero(session, 'solo');
+  const setup = new SetupViewSpy();
+  const board = new BoardViewSpy();
+  const module = new InitialNoiseGameModule({
+    session,
+    setup,
+    board,
+    randomSource: { next: () => 0 },
+  });
+
+  module.handleEvent(new CustomEvent('game-command', { detail: { type: 'draw-initial-noise' } }));
+
+  assert.equal(session.heroView.phase, 'hero');
+  assert.equal(setup.privateNoiseView, null);
+  assert.equal(board.noiseTokens.length, 3);
+  assert.ok(!JSON.stringify(setup.view).includes('two-clanrats'));
 });

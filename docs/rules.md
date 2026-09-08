@@ -21,6 +21,13 @@ the digital implementation may change as playtesting reveals better choices.
 - Noise tokens cannot share a square. A drawn result is consumed without placing a token
   when every spawn square is occupied.
 
+During setup, after every hero is deployed, draw three noise results without replacement.
+Place each result face down on an empty Skaven spawn before drawing the next. In a
+two-player game, only the Skaven player sees each identity; in a solo game, the Skaven AI
+chooses the spawn without showing the identity. A token placed in a hero's line of sight
+reveals immediately. After all three draws are resolved, Hero Turn 1 begins and the heroes
+gain 3 Command.
+
 ### ACTIONS
 -   Move — 1A
 -   Fight — 1A

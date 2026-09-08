@@ -7,6 +7,7 @@ import type { GameModule } from '/src/game/gameModule.js';
 import { GameSession } from '/src/game/gameSession.js';
 import { browserRandomSource } from '/src/game/gameState.js';
 import { SetupGameModule } from '/src/game/modules/setup.js';
+import { InitialNoiseGameModule } from '/src/game/modules/initialNoise.js';
 import { THE_NEST } from '/src/game/missions/theNest.js';
 
 const board = document.querySelector('game-board');
@@ -16,6 +17,7 @@ if (!board || !setup) throw new Error('The game board and setup controls are req
 const session = new GameSession(THE_NEST, browserRandomSource);
 const gameModules: readonly GameModule[] = Object.freeze([
   new SetupGameModule({ session, board, setup }),
+  new InitialNoiseGameModule({ session, board, setup, randomSource: browserRandomSource }),
 ]);
 const delegateGameEvent = createGameEventDelegate(gameModules);
 const gameEventTypes = new Set(gameModules.flatMap(module => module.eventTypes));

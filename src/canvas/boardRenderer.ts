@@ -11,8 +11,15 @@ export interface BoardHeroPresentation {
   readonly woundsRemaining: number;
 }
 
+export interface BoardNoisePresentation {
+  readonly position: Position;
+  readonly revealedLabel?: string;
+  readonly accessibleLabel?: string;
+}
+
 export interface BoardPresentation {
   readonly heroes?: readonly BoardHeroPresentation[];
+  readonly noiseTokens?: readonly BoardNoisePresentation[];
   readonly legalSquares?: readonly Position[];
 }
 
@@ -155,6 +162,27 @@ export const renderBoard = (
       geometry.squareSize - context.lineWidth,
       geometry.squareSize - context.lineWidth
     );
+    context.restore();
+  }
+
+  for (const noise of presentation.noiseTokens ?? []) {
+    const centerX = geometry.x + (noise.position.column + 0.5) * geometry.squareSize;
+    const centerY = geometry.y + (noise.position.row + 0.5) * geometry.squareSize;
+    const radius = geometry.squareSize * 0.31;
+
+    context.save();
+    context.beginPath();
+    context.arc(centerX, centerY, radius, 0, Math.PI * 2);
+    context.fillStyle = noise.revealedLabel ? '#d9a849' : '#171310';
+    context.fill();
+    context.strokeStyle = noise.revealedLabel ? '#eadfc9' : '#d9a849';
+    context.lineWidth = Math.max(2, geometry.squareSize * 0.07);
+    context.stroke();
+    context.fillStyle = noise.revealedLabel ? '#241914' : '#eadfc9';
+    context.font = `700 ${Math.max(9, geometry.squareSize * 0.28)}px sans-serif`;
+    context.textAlign = 'center';
+    context.textBaseline = 'middle';
+    context.fillText(noise.revealedLabel ?? '?', centerX, centerY);
     context.restore();
   }
 
