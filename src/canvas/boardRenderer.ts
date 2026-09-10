@@ -9,6 +9,7 @@ export interface BoardHeroPresentation {
   readonly position: Position;
   readonly facing: Facing;
   readonly woundsRemaining: number;
+  readonly activationStatus?: 'ready' | 'active' | 'activated';
 }
 
 export interface BoardNoisePresentation {
@@ -17,10 +18,17 @@ export interface BoardNoisePresentation {
   readonly accessibleLabel?: string;
 }
 
+export interface BoardDoorPresentation {
+  readonly position: Position;
+  readonly status: 'closed' | 'open' | 'destroyed';
+}
+
 export interface BoardPresentation {
   readonly heroes?: readonly BoardHeroPresentation[];
   readonly noiseTokens?: readonly BoardNoisePresentation[];
   readonly legalSquares?: readonly Position[];
+  readonly selectedSquare?: Position | null;
+  readonly doors?: readonly BoardDoorPresentation[];
 }
 
 const TILE_COLORS = Object.freeze({
@@ -35,7 +43,12 @@ const TILE_COLORS = Object.freeze({
   exit: '#171310',
 });
 
-const drawMarker = (context: CanvasRenderingContext2D, tile: MapTile, geometry: BoardGeometry) => {
+const drawMarker = (
+  context: CanvasRenderingContext2D,
+  tile: MapTile,
+  geometry: BoardGeometry,
+  doorStatus: BoardDoorPresentation['status'] = 'closed'
+) => {
   const { squareSize } = geometry;
   const x = geometry.x + tile.column * squareSize;
   const y = geometry.y + tile.row * squareSize;
@@ -50,8 +63,13 @@ const drawMarker = (context: CanvasRenderingContext2D, tile: MapTile, geometry: 
 
   if (tile.kind === 'door') {
     context.beginPath();
-    context.moveTo(-squareSize * 0.3, squareSize * 0.22);
-    context.lineTo(squareSize * 0.3, -squareSize * 0.22);
+    if (doorStatus === 'open' || doorStatus === 'destroyed') {
+      context.moveTo(-squareSize * 0.3, -squareSize * 0.28);
+      context.lineTo(squareSize * 0.3, -squareSize * 0.28);
+    } else {
+      context.moveTo(-squareSize * 0.3, squareSize * 0.22);
+      context.lineTo(squareSize * 0.3, -squareSize * 0.22);
+    }
     context.stroke();
   } else if (tile.kind === 'nest') {
     context.beginPath();
@@ -130,6 +148,12 @@ export const renderBoard = (
   presentation: BoardPresentation = {}
 ): BoardGeometry => {
   const geometry = calculateBoardGeometry(viewportWidth, viewportHeight, board.width, board.height);
+  const doorStatuses = new Map(
+    (presentation.doors ?? []).map(door => [
+      `${String(door.position.row)},${String(door.position.column)}`,
+      door.status,
+    ])
+  );
 
   context.clearRect(0, 0, viewportWidth, viewportHeight);
   context.fillStyle = '#221c18';
@@ -139,12 +163,16 @@ export const renderBoard = (
     for (const tile of row) {
       const x = geometry.x + tile.column * geometry.squareSize;
       const y = geometry.y + tile.row * geometry.squareSize;
-      context.fillStyle = TILE_COLORS[tile.kind];
+      const doorStatus = doorStatuses.get(`${String(tile.row)},${String(tile.column)}`);
+      context.fillStyle =
+        tile.kind === 'door' && doorStatus && doorStatus !== 'closed'
+          ? TILE_COLORS.floor
+          : TILE_COLORS[tile.kind];
       context.fillRect(x, y, geometry.squareSize, geometry.squareSize);
       context.strokeStyle = tile.kind === 'wall' || tile.kind === 'exit' ? '#302a25' : '#554b42';
       context.lineWidth = 1;
       context.strokeRect(x + 0.5, y + 0.5, geometry.squareSize - 1, geometry.squareSize - 1);
-      drawMarker(context, tile, geometry);
+      drawMarker(context, tile, geometry, doorStatus);
     }
   }
 
@@ -155,6 +183,24 @@ export const renderBoard = (
     context.fillStyle = 'rgb(212 85 46 / 28%)';
     context.strokeStyle = '#f08a63';
     context.lineWidth = Math.max(2, geometry.squareSize * 0.07);
+    context.fillRect(x + 1, y + 1, geometry.squareSize - 2, geometry.squareSize - 2);
+    context.strokeRect(
+      x + context.lineWidth / 2,
+      y + context.lineWidth / 2,
+      geometry.squareSize - context.lineWidth,
+      geometry.squareSize - context.lineWidth
+    );
+    context.restore();
+  }
+
+  if (presentation.selectedSquare) {
+    const { row, column } = presentation.selectedSquare;
+    const x = geometry.x + column * geometry.squareSize;
+    const y = geometry.y + row * geometry.squareSize;
+    context.save();
+    context.fillStyle = 'rgb(217 168 73 / 42%)';
+    context.strokeStyle = '#f3d38b';
+    context.lineWidth = Math.max(3, geometry.squareSize * 0.11);
     context.fillRect(x + 1, y + 1, geometry.squareSize - 2, geometry.squareSize - 2);
     context.strokeRect(
       x + context.lineWidth / 2,
@@ -201,9 +247,9 @@ export const renderBoard = (
     context.save();
     context.beginPath();
     context.arc(centerX, centerY, radius, 0, Math.PI * 2);
-    context.fillStyle = '#d8c7a8';
+    context.fillStyle = hero.activationStatus === 'activated' ? '#80786b' : '#d8c7a8';
     context.fill();
-    context.strokeStyle = '#4a251b';
+    context.strokeStyle = hero.activationStatus === 'active' ? '#f08a63' : '#4a251b';
     context.lineWidth = Math.max(2, geometry.squareSize * 0.07);
     context.stroke();
     context.beginPath();

@@ -38,6 +38,8 @@ gain 3 Command.
 ### MOVE / FACING
 - Models move orthogonally and cannot move through or finish on another model's square.
   Gutter Runners are the exception described by Skitter.
+- Heroes cannot move through or finish on an intact nest. Skaven can move through and finish
+  on nests. Once destroyed, a nest no longer blocks hero movement.
 - When a model takes a Move action, it may follow any legal path up to its Move allowance.
   Once during that movement, it may change its facing to any direction. It may move 0.
 - Facing is north, east, south, or west. A model's Front Arc is the three adjacent squares
@@ -59,6 +61,8 @@ gain 3 Command.
 - Walls and rubble block movement and line of sight.
 - Water blocks movement but not line of sight.
 - Closed doors block movement and line of sight. Open or destroyed doors block neither.
+- Intact nests block hero movement but not Skaven movement or line of sight. Destroyed nests
+  do not block movement or line of sight.
 
 ### FIGHT
 -   Roll Fight dice: Highest die wins.

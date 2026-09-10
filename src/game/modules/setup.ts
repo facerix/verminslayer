@@ -71,10 +71,11 @@ export class SetupGameModule implements GameModule {
   }
 
   #handleCommand(event: Event): boolean {
-    if (this.#session.heroView.setupStep === 'initial-noise') return false;
+    const command = (event as CustomEvent<GameCommand>).detail;
+    if (command.type !== 'configure-game' && command.type !== 'deploy-hero') return false;
 
     try {
-      const events = this.#session.dispatch((event as CustomEvent<GameCommand>).detail);
+      const events = this.#session.dispatch(command);
       this.#setup.announce(events);
       this.render();
     } catch (error) {

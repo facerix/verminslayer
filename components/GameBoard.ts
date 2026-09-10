@@ -1,5 +1,9 @@
 import { renderBoard } from '/src/canvas/boardRenderer.js';
-import type { BoardHeroPresentation, BoardNoisePresentation } from '/src/canvas/boardRenderer.js';
+import type {
+  BoardDoorPresentation,
+  BoardHeroPresentation,
+  BoardNoisePresentation,
+} from '/src/canvas/boardRenderer.js';
 import { pointToSquare } from '/src/canvas/boardGeometry.js';
 import type { BoardGeometry } from '/src/canvas/boardGeometry.js';
 import { h } from '/src/domUtils.js';
@@ -57,6 +61,8 @@ export class GameBoard extends HTMLElement {
   #heroes: readonly BoardHeroPresentation[] = [];
   #noiseTokens: readonly BoardNoisePresentation[] = [];
   #legalSquares: readonly Position[] = [];
+  #selectedSquare: Position | null = null;
+  #doors: readonly BoardDoorPresentation[] = [];
 
   constructor() {
     super();
@@ -89,8 +95,20 @@ export class GameBoard extends HTMLElement {
     this.#draw();
   }
 
+  set selectedSquare(position: Position | null) {
+    this.#selectedSquare = position;
+    this.#updateDescription();
+    this.#draw();
+  }
+
   set noiseTokens(tokens: readonly BoardNoisePresentation[]) {
     this.#noiseTokens = tokens;
+    this.#updateDescription();
+    this.#draw();
+  }
+
+  set doors(doors: readonly BoardDoorPresentation[]) {
+    this.#doors = doors;
     this.#updateDescription();
     this.#draw();
   }
@@ -119,6 +137,8 @@ export class GameBoard extends HTMLElement {
       heroes: this.#heroes,
       noiseTokens: this.#noiseTokens,
       legalSquares: this.#legalSquares,
+      selectedSquare: this.#selectedSquare,
+      doors: this.#doors,
     });
   }
 
@@ -172,11 +192,22 @@ export class GameBoard extends HTMLElement {
           )
           .join('; ')}.`
       : '';
+    const openDoors = this.#doors.filter(door => door.status !== 'closed');
+    const doors = openDoors.length
+      ? ` Open doors: ${openDoors
+          .map(door => `row ${door.position.row + 1}, column ${door.position.column + 1}`)
+          .join('; ')}.`
+      : '';
+    const selectedSquare = this.#selectedSquare
+      ? ` Selected destination: row ${this.#selectedSquare.row + 1}, column ${this.#selectedSquare.column + 1}.`
+      : '';
     description.textContent =
       'The Nest board: 13 columns by 19 rows, with doors, three nests, three Skaven spawn points, one hero deployment point, and a locked south exit.' +
       heroes +
       noise +
-      reveals;
+      reveals +
+      doors +
+      selectedSquare;
   }
 }
 

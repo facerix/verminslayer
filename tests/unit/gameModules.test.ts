@@ -1,11 +1,15 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 
-import type { BoardHeroPresentation } from '../../src/canvas/boardRenderer.ts';
+import type {
+  BoardDoorPresentation,
+  BoardHeroPresentation,
+} from '../../src/canvas/boardRenderer.ts';
 import { createGameEventDelegate } from '../../src/game/gameModule.ts';
 import type { GameModule } from '../../src/game/gameModule.ts';
 import { SetupGameModule } from '../../src/game/modules/setup.ts';
 import { InitialNoiseGameModule } from '../../src/game/modules/initialNoise.ts';
+import { HeroTurnGameModule } from '../../src/game/modules/heroTurn.ts';
 import { GameSession } from '../../src/game/gameSession.ts';
 import type {
   GameEvent,
@@ -24,6 +28,7 @@ class SetupViewSpy {
   announced: readonly GameEvent[] = [];
   error = '';
   deployment: Position | null = null;
+  moveSelection: 'destination' | Position | null = null;
 
   get view(): HeroGameView {
     assert.ok(this.#view, 'Expected the setup module to render a view');
@@ -62,12 +67,26 @@ class SetupViewSpy {
   deployAt(position: Position) {
     this.deployment = position;
   }
+
+  chooseMoveDestination() {
+    this.moveSelection = 'destination';
+  }
+
+  chooseMoveFacing(destination: Position) {
+    this.moveSelection = destination;
+  }
+
+  clearMoveSelection() {
+    this.moveSelection = null;
+  }
 }
 
 class BoardViewSpy {
   heroes: readonly BoardHeroPresentation[] = [];
   legalSquares: readonly Position[] = [];
+  selectedSquare: Position | null = null;
   noiseTokens: readonly { readonly position: Position; readonly revealedLabel?: string }[] = [];
+  doors: readonly BoardDoorPresentation[] = [];
 }
 
 const deploySingleHero = (session: GameSession, mode: 'solo' | 'two-player') => {
@@ -78,6 +97,14 @@ const deploySingleHero = (session: GameSession, mode: 'solo' | 'two-player') => 
     position: { row: 16, column: 3 },
     facing: 'north',
   });
+};
+
+const completeSoloSetup = (session: GameSession) => {
+  deploySingleHero(session, 'solo');
+  for (const spawn of THE_NEST.board.spawns) {
+    session.dispatch({ type: 'draw-initial-noise' });
+    session.dispatch({ type: 'place-initial-noise', position: spawn });
+  }
 };
 
 test('the setup module renders setup state and handles setup commands', () => {
@@ -280,4 +307,88 @@ test('solo initial noise uses ordinary commands without rendering a private iden
   assert.equal(setup.privateNoiseView, null);
   assert.equal(board.noiseTokens.length, 3);
   assert.ok(!JSON.stringify(setup.view).includes('two-clanrats'));
+});
+
+test('the Hero-turn module chooses a destination before committing movement and facing', () => {
+  const session = new GameSession(THE_NEST, { next: () => 0 });
+  completeSoloSetup(session);
+  const setup = new SetupViewSpy();
+  const board = new BoardViewSpy();
+  const module = new HeroTurnGameModule({ session, setup, board });
+
+  module.render();
+  assert.equal(setup.view.phase, 'hero');
+  assert.equal(board.doors.length, THE_NEST.board.doors.length);
+
+  module.handleEvent(
+    new CustomEvent('game-command', {
+      detail: { type: 'start-hero-activation', heroId: 'gotrek' },
+    })
+  );
+  assert.equal(setup.view.activeHeroId, 'gotrek');
+  assert.equal(board.heroes[0]?.activationStatus, 'active');
+
+  module.handleEvent(new CustomEvent('hero-move-requested'));
+  assert.equal(setup.moveSelection, 'destination');
+  assert.ok(board.legalSquares.some(position => position.row === 15 && position.column === 3));
+
+  module.handleEvent(new CustomEvent('board-square-selected', { detail: { row: 15, column: 3 } }));
+  assert.deepEqual(setup.moveSelection, { row: 15, column: 3 });
+  assert.deepEqual(board.selectedSquare, { row: 15, column: 3 });
+  assert.deepEqual(setup.view.heroes[0]?.position, { row: 16, column: 3 });
+  assert.equal(setup.view.heroes[0]?.facing, 'north');
+  assert.equal(setup.view.actionsRemaining, 4);
+  assert.deepEqual(board.legalSquares, []);
+
+  module.handleEvent(new CustomEvent('hero-move-facing-selected', { detail: 'east' }));
+  assert.deepEqual(setup.view.heroes[0]?.position, { row: 15, column: 3 });
+  assert.equal(setup.view.heroes[0]?.facing, 'east');
+  assert.equal(setup.view.actionsRemaining, 3);
+  assert.equal(setup.moveSelection, null);
+  assert.equal(board.selectedSquare, null);
+  assert.deepEqual(board.legalSquares, []);
+});
+
+test('the Hero-turn module can cancel movement before or after choosing a destination', () => {
+  const session = new GameSession(THE_NEST, { next: () => 0 });
+  completeSoloSetup(session);
+  const setup = new SetupViewSpy();
+  const board = new BoardViewSpy();
+  const module = new HeroTurnGameModule({ session, setup, board });
+
+  module.handleEvent(
+    new CustomEvent('game-command', {
+      detail: { type: 'start-hero-activation', heroId: 'gotrek' },
+    })
+  );
+  module.handleEvent(new CustomEvent('hero-move-requested'));
+  module.handleEvent(new CustomEvent('hero-move-cancelled'));
+  assert.equal(setup.moveSelection, null);
+  assert.deepEqual(board.legalSquares, []);
+
+  module.handleEvent(new CustomEvent('hero-move-requested'));
+  module.handleEvent(new CustomEvent('board-square-selected', { detail: { row: 15, column: 3 } }));
+  assert.deepEqual(board.selectedSquare, { row: 15, column: 3 });
+  module.handleEvent(new CustomEvent('hero-move-cancelled'));
+  assert.deepEqual(setup.view.heroes[0]?.position, { row: 16, column: 3 });
+  assert.equal(setup.view.actionsRemaining, 4);
+  assert.equal(setup.moveSelection, null);
+  assert.equal(board.selectedSquare, null);
+});
+
+test('setup and noise modules leave Hero-turn commands for the Hero-turn module', () => {
+  const session = new GameSession(THE_NEST, { next: () => 0 });
+  completeSoloSetup(session);
+  const setup = new SetupViewSpy();
+  const board = new BoardViewSpy();
+  const setupModule = new SetupGameModule({ session, setup, board });
+  const noiseModule = new InitialNoiseGameModule({ session, setup, board, randomSource });
+  const heroModule = new HeroTurnGameModule({ session, setup, board });
+  const event = new CustomEvent('game-command', {
+    detail: { type: 'start-hero-activation', heroId: 'gotrek' },
+  });
+
+  assert.equal(setupModule.handleEvent(event), false);
+  assert.equal(noiseModule.handleEvent(event), false);
+  assert.equal(heroModule.handleEvent(event), true);
 });

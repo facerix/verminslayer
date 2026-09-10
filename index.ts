@@ -1,6 +1,7 @@
 import { serviceWorkerManager } from '/src/ServiceWorkerManager.js';
 import '/components/GameBoard.js';
 import '/components/GameSetup.js';
+import '/components/ConfirmationModal.js';
 import '/components/UpdateNotification.js';
 import { createGameEventDelegate } from '/src/game/gameModule.js';
 import type { GameModule } from '/src/game/gameModule.js';
@@ -8,6 +9,7 @@ import { GameSession } from '/src/game/gameSession.js';
 import { browserRandomSource } from '/src/game/gameState.js';
 import { SetupGameModule } from '/src/game/modules/setup.js';
 import { InitialNoiseGameModule } from '/src/game/modules/initialNoise.js';
+import { HeroTurnGameModule } from '/src/game/modules/heroTurn.js';
 import { THE_NEST } from '/src/game/missions/theNest.js';
 
 const board = document.querySelector('game-board');
@@ -18,6 +20,7 @@ const session = new GameSession(THE_NEST, browserRandomSource);
 const gameModules: readonly GameModule[] = Object.freeze([
   new SetupGameModule({ session, board, setup }),
   new InitialNoiseGameModule({ session, board, setup, randomSource: browserRandomSource }),
+  new HeroTurnGameModule({ session, board, setup }),
 ]);
 const delegateGameEvent = createGameEventDelegate(gameModules);
 const gameEventTypes = new Set(gameModules.flatMap(module => module.eventTypes));

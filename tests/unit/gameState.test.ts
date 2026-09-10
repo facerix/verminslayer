@@ -43,6 +43,42 @@ const deploy = (mode: 'solo' | 'two-player' = 'solo') => {
   ).state;
 };
 
+const beginHeroTurn = (heroIds: readonly HeroId[] = ['gotrek']) => {
+  let state = resolveCommand(
+    createInitialGameState(THE_NEST),
+    { type: 'configure-game', mode: 'solo', heroIds },
+    randomSource
+  ).state;
+  const deployments = [
+    { row: 16, column: 3 },
+    { row: 16, column: 4 },
+    { row: 17, column: 3 },
+    { row: 17, column: 4 },
+    { row: 16, column: 2 },
+  ];
+  for (const [index, heroId] of heroIds.entries()) {
+    state = resolveCommand(
+      state,
+      {
+        type: 'deploy-hero',
+        heroId,
+        position: deployments[index]!,
+        facing: 'north',
+      },
+      randomSource
+    ).state;
+  }
+  for (const spawn of THE_NEST.board.spawns) {
+    state = resolveCommand(state, { type: 'draw-initial-noise' }, { next: () => 0 }).state;
+    state = resolveCommand(
+      state,
+      { type: 'place-initial-noise', position: spawn },
+      randomSource
+    ).state;
+  }
+  return state;
+};
+
 test('initial setup defaults to Gotrek and Felix without starting the game', () => {
   const state = createInitialGameState(THE_NEST);
 
@@ -495,4 +531,363 @@ test('invalid randomness rejects a draw without consuming the bag', () => {
     (error: unknown) => error instanceof RulesError && error.code === 'INVALID_RANDOM_VALUE'
   );
   assert.equal(JSON.stringify(state), before);
+});
+
+test('heroes activate in a chosen order with four Actions each', () => {
+  const state = beginHeroTurn(['gotrek', 'felix']);
+  const result = resolveCommand(
+    state,
+    { type: 'start-hero-activation', heroId: 'felix' } as GameCommand,
+    randomSource
+  );
+
+  assert.equal(result.state.activeHeroId, 'felix');
+  assert.equal(result.state.actionsRemaining, 4);
+  assert.deepEqual(result.state.activatedHeroIds, []);
+  assert.deepEqual(result.events, [
+    { type: 'hero-activation-started', heroId: 'felix', actions: 4 },
+  ]);
+});
+
+test('a Move spends one Action, follows each submitted step, and changes facing once', () => {
+  const active = resolveCommand(
+    beginHeroTurn(),
+    { type: 'start-hero-activation', heroId: 'gotrek' } as GameCommand,
+    randomSource
+  ).state;
+  const result = resolveCommand(
+    active,
+    {
+      type: 'move-hero',
+      heroId: 'gotrek',
+      path: [
+        { row: 15, column: 3 },
+        { row: 15, column: 4 },
+      ],
+      facing: 'east',
+    } as GameCommand,
+    randomSource
+  );
+
+  assert.deepEqual(result.state.heroes[0]?.position, { row: 15, column: 4 });
+  assert.equal(result.state.heroes[0]?.facing, 'east');
+  assert.equal(result.state.actionsRemaining, 3);
+  assert.deepEqual(
+    result.events.map(event => event.type),
+    ['hero-moved', 'hero-moved', 'hero-facing-changed', 'action-spent']
+  );
+});
+
+test('a zero-square Move can change facing and still costs one Action', () => {
+  const active = resolveCommand(
+    beginHeroTurn(),
+    { type: 'start-hero-activation', heroId: 'gotrek' } as GameCommand,
+    randomSource
+  ).state;
+  const result = resolveCommand(
+    active,
+    {
+      type: 'move-hero',
+      heroId: 'gotrek',
+      path: [],
+      facing: 'south',
+    } as GameCommand,
+    randomSource
+  );
+
+  assert.deepEqual(result.state.heroes[0]?.position, { row: 16, column: 3 });
+  assert.equal(result.state.heroes[0]?.facing, 'south');
+  assert.equal(result.state.actionsRemaining, 3);
+});
+
+test('movement rejects excessive, diagonal, impassable, and occupied paths transactionally', () => {
+  const active = resolveCommand(
+    beginHeroTurn(['gotrek', 'felix']),
+    { type: 'start-hero-activation', heroId: 'gotrek' } as GameCommand,
+    randomSource
+  ).state;
+  const before = JSON.stringify(active);
+  const paths = [
+    [
+      { row: 15, column: 3 },
+      { row: 14, column: 3 },
+      { row: 13, column: 3 },
+      { row: 12, column: 3 },
+    ],
+    [{ row: 15, column: 2 }],
+    [
+      { row: 15, column: 3 },
+      { row: 15, column: 2 },
+    ],
+    [{ row: 16, column: 4 }],
+  ];
+
+  for (const path of paths) {
+    assert.throws(
+      () =>
+        resolveCommand(
+          active,
+          { type: 'move-hero', heroId: 'gotrek', path, facing: 'north' } as GameCommand,
+          randomSource
+        ),
+      (error: unknown) => error instanceof RulesError && error.code === 'INVALID_MOVEMENT_PATH'
+    );
+    assert.equal(JSON.stringify(active), before);
+  }
+});
+
+test('heroes cannot move onto or through intact nests, but can cross destroyed nests', () => {
+  const base = beginHeroTurn();
+  const besideNest: GameState = {
+    ...base,
+    heroes: Object.freeze([
+      Object.freeze({ ...base.heroes[0]!, position: Object.freeze({ row: 11, column: 1 }) }),
+    ]),
+  };
+  const active = resolveCommand(
+    besideNest,
+    { type: 'start-hero-activation', heroId: 'gotrek' },
+    randomSource
+  ).state;
+  const pathAcrossNest = Object.freeze([
+    Object.freeze({ row: 11, column: 2 }),
+    Object.freeze({ row: 11, column: 3 }),
+  ]);
+
+  assert.ok(
+    !projectHeroView(active).legalMovePaths.some(
+      path => path.destination.row === 11 && path.destination.column === 2
+    )
+  );
+  assert.throws(
+    () =>
+      resolveCommand(
+        active,
+        { type: 'move-hero', heroId: 'gotrek', path: pathAcrossNest, facing: 'east' },
+        randomSource
+      ),
+    (error: unknown) => error instanceof RulesError && error.code === 'INVALID_MOVEMENT_PATH'
+  );
+
+  const destroyedNest: GameState = {
+    ...active,
+    nests: Object.freeze(
+      active.nests.map(nest =>
+        nest.position.row === 11 && nest.position.column === 2
+          ? Object.freeze({ ...nest, status: 'destroyed' as const })
+          : nest
+      )
+    ),
+  };
+  assert.deepEqual(
+    projectHeroView(destroyedNest).legalMovePaths.find(
+      path => path.destination.row === 11 && path.destination.column === 3
+    )?.steps,
+    pathAcrossNest
+  );
+  assert.deepEqual(
+    resolveCommand(
+      destroyedNest,
+      { type: 'move-hero', heroId: 'gotrek', path: pathAcrossNest, facing: 'east' },
+      randomSource
+    ).state.heroes[0]?.position,
+    { row: 11, column: 3 }
+  );
+});
+
+test('an adjacent door interaction opens and closes the door for one Action', () => {
+  const base = beginHeroTurn();
+  const besideDoor: GameState = {
+    ...base,
+    heroes: Object.freeze([
+      Object.freeze({ ...base.heroes[0]!, position: Object.freeze({ row: 14, column: 5 }) }),
+    ]),
+  };
+  let state = resolveCommand(
+    besideDoor,
+    { type: 'start-hero-activation', heroId: 'gotrek' } as GameCommand,
+    randomSource
+  ).state;
+  state = resolveCommand(
+    state,
+    { type: 'interact-door', heroId: 'gotrek', position: { row: 14, column: 6 } } as GameCommand,
+    randomSource
+  ).state;
+
+  assert.equal(
+    state.doors.find(door => door.position.row === 14 && door.position.column === 6)?.status,
+    'open'
+  );
+  assert.equal(state.actionsRemaining, 3);
+  assert.ok(
+    projectHeroView(state).legalMovePaths.some(
+      path => path.destination.row === 14 && path.destination.column === 6
+    )
+  );
+
+  state = resolveCommand(
+    state,
+    { type: 'interact-door', heroId: 'gotrek', position: { row: 14, column: 6 } } as GameCommand,
+    randomSource
+  ).state;
+  assert.equal(
+    state.doors.find(door => door.position.row === 14 && door.position.column === 6)?.status,
+    'closed'
+  );
+  assert.equal(state.actionsRemaining, 2);
+});
+
+test('opening a door applies its line-of-sight effect immediately', () => {
+  const base = beginHeroTurn();
+  const besideDoor: GameState = {
+    ...base,
+    heroes: Object.freeze([
+      Object.freeze({ ...base.heroes[0]!, position: Object.freeze({ row: 14, column: 5 }) }),
+    ]),
+    concealedNoise: Object.freeze([
+      Object.freeze({
+        id: 'behind-door',
+        resultId: 'rat-ogor',
+        position: Object.freeze({ row: 14, column: 7 }),
+      }),
+    ]),
+    revealedNoise: Object.freeze([]),
+  };
+  const active = resolveCommand(
+    besideDoor,
+    { type: 'start-hero-activation', heroId: 'gotrek' },
+    randomSource
+  ).state;
+  const result = resolveCommand(
+    active,
+    { type: 'interact-door', heroId: 'gotrek', position: { row: 14, column: 6 } },
+    randomSource
+  );
+
+  assert.deepEqual(result.state.concealedNoise, []);
+  assert.equal(result.state.revealedNoise[0]?.resultId, 'rat-ogor');
+  assert.deepEqual(
+    result.events.map(event => event.type),
+    ['door-opened', 'noise-revealed', 'action-spent']
+  );
+});
+
+test('an occupied open doorway cannot be closed', () => {
+  const base = beginHeroTurn(['gotrek', 'felix']);
+  const occupiedDoor: GameState = {
+    ...base,
+    doors: Object.freeze(
+      base.doors.map(door =>
+        door.position.row === 14 && door.position.column === 6
+          ? Object.freeze({ ...door, status: 'open' as const })
+          : door
+      )
+    ),
+    heroes: Object.freeze([
+      Object.freeze({ ...base.heroes[0]!, position: Object.freeze({ row: 14, column: 5 }) }),
+      Object.freeze({ ...base.heroes[1]!, position: Object.freeze({ row: 14, column: 6 }) }),
+    ]),
+  };
+  const active = resolveCommand(
+    occupiedDoor,
+    { type: 'start-hero-activation', heroId: 'gotrek' },
+    randomSource
+  ).state;
+
+  assert.ok(
+    !projectHeroView(active).legalDoorInteractions.some(
+      position => position.row === 14 && position.column === 6
+    )
+  );
+
+  assert.throws(
+    () =>
+      resolveCommand(
+        active,
+        { type: 'interact-door', heroId: 'gotrek', position: { row: 14, column: 6 } },
+        randomSource
+      ),
+    (error: unknown) => error instanceof RulesError && error.code === 'DOOR_OCCUPIED'
+  );
+});
+
+test('dead, exited, and already-activated heroes cannot start an activation', () => {
+  const base = beginHeroTurn(['gotrek', 'felix']);
+  const unavailableStates: readonly GameState[] = [
+    {
+      ...base,
+      heroes: Object.freeze([
+        Object.freeze({ ...base.heroes[0]!, woundsRemaining: 0 }),
+        base.heroes[1]!,
+      ]),
+    },
+    { ...base, exitedHeroIds: Object.freeze(['gotrek']) },
+    { ...base, activatedHeroIds: Object.freeze(['gotrek']) },
+  ];
+
+  for (const state of unavailableStates) {
+    assert.throws(
+      () =>
+        resolveCommand(state, { type: 'start-hero-activation', heroId: 'gotrek' }, randomSource),
+      RulesError
+    );
+  }
+});
+
+test('ending an activation early and ending the Hero phase require explicit confirmation', () => {
+  let state = resolveCommand(
+    beginHeroTurn(),
+    { type: 'start-hero-activation', heroId: 'gotrek' } as GameCommand,
+    randomSource
+  ).state;
+
+  assert.throws(
+    () =>
+      resolveCommand(
+        state,
+        { type: 'end-hero-activation', heroId: 'gotrek', confirmed: false } as GameCommand,
+        randomSource
+      ),
+    (error: unknown) => error instanceof RulesError && error.code === 'CONFIRMATION_REQUIRED'
+  );
+  state = resolveCommand(
+    state,
+    { type: 'end-hero-activation', heroId: 'gotrek', confirmed: true } as GameCommand,
+    randomSource
+  ).state;
+  assert.deepEqual(state.activatedHeroIds, ['gotrek']);
+
+  assert.throws(
+    () =>
+      resolveCommand(
+        state,
+        { type: 'end-hero-phase', confirmed: false } as GameCommand,
+        randomSource
+      ),
+    (error: unknown) => error instanceof RulesError && error.code === 'CONFIRMATION_REQUIRED'
+  );
+  const ended = resolveCommand(
+    state,
+    { type: 'end-hero-phase', confirmed: true } as GameCommand,
+    randomSource
+  );
+  assert.equal(ended.state.phase, 'skaven');
+  assert.deepEqual(
+    ended.events.map(event => event.type),
+    ['hero-phase-ended', 'skaven-turn-started']
+  );
+});
+
+test('the phase cannot end until every living non-exited hero has activated', () => {
+  const state = beginHeroTurn(['gotrek', 'felix']);
+
+  assert.throws(
+    () =>
+      resolveCommand(
+        state,
+        { type: 'end-hero-phase', confirmed: true } as GameCommand,
+        randomSource
+      ),
+    (error: unknown) => error instanceof RulesError && error.code === 'HEROES_NOT_ACTIVATED'
+  );
 });

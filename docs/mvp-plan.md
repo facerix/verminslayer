@@ -31,6 +31,7 @@ V1 deliberately excludes saved games, persistence, undo, phone-specific pan/zoom
   - Ranged and proximity ranges use Chebyshev distance.
   - Walls and rubble block movement and LOS. Water blocks movement but not LOS.
   - Closed doors block movement and LOS; open or destroyed doors block neither.
+  - Intact nests block heroes but not Skaven; destroyed nests block neither side.
   - LOS uses square-center supercover rays, is blocked at touching terrain corners, and is not blocked by models, nests, water, or open doors.
 - Setup sequence:
   - Choose mode and 1–5 unique heroes, preselecting Gotrek and Felix.
