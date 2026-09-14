@@ -1,6 +1,6 @@
 # MVP Progress
 
-Last updated: 2026-09-13
+Last updated: 2026-09-14
 
 This is the handoff log for [`mvp-plan.md`](mvp-plan.md). Update it when a reviewable
 slice starts or finishes so a future turn can resume without reconstructing project state
@@ -14,6 +14,12 @@ splittable Movement plus two Actions, with once-per-activation Dash and Push. Re
 become stable Skaven models, and active heroes can resolve adjacent Fights with public dice,
 wounds, and model removal.
 
+On 2026-09-14, playtesting replaced voluntary Noise reveals and LOS avoidance with forced
+contact reveals: Noise reveals upon entering hero line of sight or adjacency, and movement
+spent as Noise becomes the revealed group's Movement. The rules and roadmap reflect this,
+but the current engine still implements the earlier LOS-only reveal behavior. Slice 6 owns
+the rules reconciliation as well as the new Skaven-turn loop.
+
 | Slice | Status | Outcome |
 | --- | --- | --- |
 | 1. Map foundation and board preview | Complete | Validated The Nest map and responsive Canvas rendering |
@@ -21,7 +27,11 @@ wounds, and model removal.
 | 3. Initial noise setup and privacy | Complete | Private draw/placement, solo setup AI, face-down tokens, LOS reveals, and Hero Turn 1 handoff |
 | 4. Hero activation and movement | Complete | Split Movement, two Actions, Dash, Push, legal paths, facing, doors, and phase completion |
 | 5. Revealed Skaven and core combat | Complete | Group placement, Fight actions, dice, wounds, and death |
-| 6+. Rules-enforced play | Not started | Guard, abilities, Skaven AI, noise movement, objectives, and mission resolution |
+| 6. Complete two-player Skaven turn | Not started | Manual Skaven control, forced contact reveals, React, noise activation, reinforcement, and round transition |
+| 7. Solo Skaven AI | Not started | Legal command generation for placement, Skaven activations, paths, targets, and attacks |
+| 8. Reactive combat mechanics | Not started | Guard, rerolls, Ward, death prevention, dice modifiers, and Rat Ogor damage |
+| 9. Active and movement abilities | Not started | Bonus attacks/movement, ranged abilities, charges, Skitter, and Smash |
+| 10. Mission resolution and MVP hardening | Not started | Nests, exit, victory and loss, complete-game scenarios, privacy, UI, and offline verification |
 
 ## Completed in slice 1
 
@@ -183,9 +193,68 @@ At the end of slice 5 plus the action-economy revision:
 
 ## Proposed next slice
 
-Implement complete Skaven activations and turn progression: controller/AI activation order,
-movement and facing, optional Skaven-initiated Fights, hidden-noise movement, two replacement
-draws, the 2-Command Hero-turn reset, and the transition into the next Hero turn. This slice
-must include the 2-Command React interruption after Skaven Movement. Keep Guard,
-bonus/reroll abilities, nest destruction, and mission victory as separately reviewable
-follow-ups unless they are required to make an interruption or transition rules-correct.
+First reconcile every reveal site with the revised rule: Noise reveals immediately in hero
+line of sight or adjacency, including during setup, hero movement, and board changes such as
+opening a door. Remove voluntary reveal commands and choices.
+
+Then implement a complete shared-device two-player Skaven turn in three steps:
+
+1. Activate every Skaven already revealed on the board, in the controller's chosen order,
+   with Movement plus 1 Action. Support ordinary Fight and the Clanrat's Door action.
+2. Activate every Noise token. Move it up to 5 by a shortest legal route toward the nearest
+   hero. If it reveals, treat the Noise movement as the revealed group's Movement, resolve
+   placement, offer the 2-Command React interruption behind a role-handoff cover, and then
+   let each new model take 1 Action with no further Movement.
+3. Reinforce by drawing and privately placing two Noise results at available Skaven entries.
+   These do not activate this turn, even if placement reveals them immediately.
+
+Noise revealed outside its own activation never acts immediately. After reinforcement,
+transition to the next Hero turn and reset Command to 2.
+
+Keep solo policy out of this slice: first make the complete round controllable and
+rules-enforced through ordinary commands, then layer AI decisions over the same engine API.
+Guard, card-specific abilities, objectives, and mission resolution remain later slices.
+
+## Remaining slice breakdown
+
+### Slice 7: Solo Skaven AI
+
+- Place revealed models to maximize immediate attacks and use fresh randomness to break
+  equally scored choices.
+- Choose legal activation order, paths, facing, targets, and attacks through ordinary
+  `GameCommand` values and the same validation path used by the two-player controller.
+- Follow the forced shortest-route Noise procedure without evaluating whether revelation is
+  tactically advantageous; use fresh randomness only to break equally short legal routes.
+- Cover blocked and crowded boards with deterministic test randomness while keeping
+  production games intentionally non-replayable.
+
+### Slice 8: Reactive combat mechanics
+
+- Add Guard placement, step-by-step movement interruption, marker consumption, and expiry.
+- Add optional Fight-die rerolls from Karaghul and Rememberer, including the rule that each
+  die can be rerolled at most once.
+- Add Ward resolution and Snorri's once-per-mission death prevention.
+- Apply contextual combat effects: Axe of Grimnir, Strength in Numbers, Backstab, and Brute
+  Strength.
+- Model pending choices explicitly so interrupted combat remains immutable, transactional,
+  and visible to the correct player.
+
+### Slice 9: Active and movement abilities
+
+- Add Slayer's Fury and Two-Fisted bonus attacks or movement.
+- Add Kislevite Bow and Hunter's Step, Arcane Bolt, and Repeater Handgun.
+- Add Demolition Charge placement, confirmed detonation, feature destruction, and adjacent
+  attacks.
+- Add Skitter movement through Clanrats and Rat Ogor Smash through closed doors.
+- Track once-per-activation, once-per-round, and once-per-mission usage explicitly.
+
+### Slice 10: Mission resolution and MVP hardening
+
+- Destroy nests through the normal 2-Action mission interaction or Demolition Charge and
+  open the Watch Post exit only after all three are destroyed.
+- Resolve immediate hero victory on exit, immediate Skaven victory when all selected heroes
+  die, and the Hero Turn 8 timeout without another Skaven turn.
+- Add complete solo and two-player round scenarios plus hero elimination, timeout, and
+  successful nest-destruction-and-exit scenarios for rosters of 1 through 5 heroes.
+- Complete desktop/tablet, pass-device privacy, reaction handoff, restart confirmation,
+  offline startup, and console-error verification.

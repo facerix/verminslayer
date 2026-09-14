@@ -13,25 +13,41 @@ physical Verminslayer board game. It is deliberately a living document; see
 
 ### SKAVEN TURN
 
-- Optionally reveal any noise tokens already in play. Those Skaven can act this turn.
-- Activate every revealed Skaven once, in any order. Each gets one Movement and 1 Action.
-- A Skaven Action is normally Fight. A Clanrat may instead use it to open or close an
-  adjacent door. A Rat Ogor's Smash lets it destroy a closed door during movement.
-- Move each noise token up to 5 spaces. Noise receives Movement only and no Action.
+1. **Activate Skaven.** Activate each revealed Skaven once, in any order. Each gets its
+   Movement and 1 Action. A Skaven Action is normally Fight. A Clanrat may instead use it to
+   open or close an adjacent door. A Rat Ogor's Smash lets it destroy a closed door during
+   movement.
+2. **Activate Noise.** Activate each Noise token once. It moves up to 5 spaces by a shortest
+   legal route toward the nearest hero. If it reveals during this movement, the resulting
+   Skaven may each take 1 Action but may not Move again this turn.
+3. **Reinforce.** Draw 2 Noise results and place them at Skaven entries. They do not activate
+   this turn, even if they reveal immediately.
 
 ### NOISE
 
-- Face-down and hidden from the Hero player.
-- A noise token cannot enter a square in any hero's line of sight and reveals when seen.
+- A Noise token is face-down and hidden from the Hero player. It has Move 5 and no facing.
+- There is no Reveal action and Noise cannot be revealed voluntarily. It remains Noise until
+  contact forces it to reveal.
+- A Noise token immediately reveals when it enters a square in any hero's line of sight or
+  adjacent to any hero. Noise can reveal at any time: also reveal it immediately when hero
+  movement or a board change such as opening a door causes either condition to become true.
+- Replace revealed Noise with the models shown on the token. If the result is `Nothing`,
+  simply remove it.
+- A Noise token's movement counts as the Movement of every Skaven it reveals. If it reveals
+  during its own activation, finish placing the group, then its Movement is complete. After
+  the normal React window, each newly revealed model may take 1 Action but may not Move again
+  that turn.
+- If Noise reveals outside its own activation, the resulting Skaven do not act immediately;
+  they receive their next normal activation during a later Skaven turn.
 - Noise tokens cannot share a square. A drawn result is consumed without placing a token
   when every spawn square is occupied.
 
 During setup, after every hero is deployed, draw three noise results without replacement.
 Place each result face down on an empty Skaven spawn before drawing the next. In a
 two-player game, only the Skaven player sees each identity; in a solo game, the Skaven AI
-chooses the spawn without showing the identity. A token placed in a hero's line of sight
-reveals immediately. After all three draws are resolved, Hero Turn 1 begins and the heroes
-set the shared pool to 2 Command.
+chooses the spawn without showing the identity. A token placed in a hero's line of sight or
+adjacent to a hero reveals immediately, but its models do not act during setup. After all
+three draws are resolved, Hero Turn 1 begins and the heroes set the shared pool to 2 Command.
 
 ### COMMAND
 
@@ -42,7 +58,9 @@ disappears when the next Hero turn resets the pool to 2.
   be Pushed once per activation.
 - **React — 2 Command:** During the Skaven turn, after a revealed enemy completes its
   Movement, one hero may immediately perform one action that normally costs exactly 1 Action.
-  React cannot be used for Dash, Guard, or a mission action.
+  A Noise activation that reveals a group creates one React opportunity after the complete
+  group is placed and before its models take their Actions. React cannot be used for Dash,
+  Guard, or a mission action.
 
 ### ACTIONS
 
@@ -195,7 +213,12 @@ disappears when the next Hero turn resets the pool to 2.
 ----------
 ### NOISE
 
-Move 5 toward the nearest hero; cannot enter hero LOS.
+**Move 5 · no facing**
+
+Move by a shortest legal route toward the nearest hero. Reveal immediately upon entering a
+hero's line of sight or an adjacent square. Movement already spent as Noise is the Movement
+of the Skaven it reveals; those models may each take 1 Action but may not Move again that
+turn.
 
 ----------
 

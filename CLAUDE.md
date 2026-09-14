@@ -21,9 +21,10 @@ Current playtest rules specification: [`docs/rules.md`](docs/rules.md). Key conc
 
 - **Hero turn**: reset the shared pool to 2 Command. Each hero activates once with one
   splittable Movement and 2 Actions.
-- **Skaven turn**: optionally reveal noise tokens in play (those Skaven may act), then
-  activate every revealed Skaven once with one Movement and 1 Action. Noise tokens receive
-  Movement only and move 5 toward the nearest hero.
+- **Skaven turn**: activate revealed Skaven with one Movement and 1 Action, activate each
+  Noise token by moving it up to 5 toward the nearest hero, then reinforce with 2 new Noise.
+  Noise that reveals during its activation becomes models that may each take 1 Action but
+  cannot Move again that turn. Reinforcements do not activate until the next turn.
 
 ### Hero activation
 
@@ -47,8 +48,12 @@ Current playtest rules specification: [`docs/rules.md`](docs/rules.md). Key conc
 
 ### Noise
 
-Face-down, hidden tokens. Cannot enter a hero's line of sight. Revealed when seen; a
-revealed token resolves to a Skaven group (or nothing) from the mission's noise bag.
+Face-down, hidden tokens with Move 5 and no facing. Noise follows a shortest legal route
+toward the nearest hero and immediately reveals upon entering hero line of sight or an
+adjacent square. There is no voluntary Reveal action. A revealed token resolves to its
+Skaven group, or is removed if it is Nothing. Movement spent as Noise becomes the revealed
+models' Movement; when revelation occurs during the Noise activation, each model may take
+1 Action but cannot Move again that turn.
 
 ### Entities
 

@@ -40,7 +40,10 @@ A revealed Skaven gets:
 
 Its Action is usually Fight. A Clanrat can instead spend it opening a Door. A Rat Ogor doesn't even need that because Smash lets it burst through one.
 
-Noise gets **Movement only**.
+Noise begins with **Movement only**. It moves up to 5 by a shortest legal route toward the
+nearest hero and reveals when it enters hero line of sight or adjacency. If it reveals during
+that activation, the movement already spent becomes the revealed models' Movement; each may
+then take one Action but cannot Move again that turn. Noise never reveals voluntarily.
 
 So both players understand the same basic concept:
 

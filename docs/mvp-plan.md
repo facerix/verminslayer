@@ -37,7 +37,7 @@ V1 deliberately excludes saved games, persistence, undo, phone-specific pan/zoom
 - Setup sequence:
   - Choose mode and 1–5 unique heroes, preselecting Gotrek and Felix.
   - Deploy them with chosen facing on `@` or any empty passable adjacent square.
-  - Draw three noise results without replacement. In two-player mode, use a pass-device cover while the Skaven player privately sees each result and chooses an empty `S` square. In solo mode, the AI does this without exposing identities.
+  - Draw three noise results without replacement. In two-player mode, use a pass-device cover while the Skaven player privately sees each result and chooses an empty `S` square. In solo mode, the AI does this without exposing identities. A token placed in hero line of sight or adjacent to a hero reveals immediately, but its models do not act during setup.
 - Hero turns:
   - Reset the shared pool to 2 Command at the start of every Hero turn; unused Command from
     the prior round is discarded.
@@ -51,19 +51,20 @@ V1 deliberately excludes saved games, persistence, undo, phone-specific pan/zoom
   - Enforce Move, Fight, Interact, Guard, nest destruction, doors, and all six heroes’ special abilities.
   - Roll dice in the application, display every result, and pause for optional rerolls, bonus attacks, or bonus movement.
   - Track once-per-activation, once-per-round, and once-per-mission usage explicitly.
-  - Process movement one square at a time so LOS reveals and Guard attacks interrupt at the correct moment. If the moving model survives a Guard attack, it continues its submitted path.
+  - Process movement one square at a time so line-of-sight or adjacency reveals and Guard attacks interrupt at the correct moment. If the moving model survives a Guard attack, it continues its submitted path.
 - Skaven turns:
-  - In two-player mode, the Skaven player chooses optional reveals, activation order, movement, facing, targets, and optional attacks.
+  - There is no Reveal action or voluntary conversion. Noise remains concealed until line of sight or adjacency forces it to reveal.
+  - First activate every Skaven already revealed on the board once. In two-player mode, the Skaven player chooses activation order, movement, facing, targets, and optional attacks.
   - A revealed result places its models on the token square and then the nearest empty reachable passable squares by movement distance; the Skaven controller chooses among equal candidates. “Nothing” removes the token.
-  - Activate every revealed Skaven once with one Movement and 1 Action. Fight is the ordinary
-    action; a Clanrat may use Door instead, while a Rat Ogor may Smash a door during Movement.
-  - Move each remaining hidden noise token five steps where legal along a shortest route toward a nearest hero, truncating before the first square in any hero’s LOS or when blocked.
-  - Draw and place two new noise results after movement and activations. Noise cannot stack in v1; draws are consumed and lost when every spawn square is occupied.
-  - A noise token placed or exposed in hero LOS reveals immediately. Models revealed during the end-of-turn replenishment cannot activate until the next Skaven turn.
+  - Each normally activated Skaven gets one Movement and 1 Action. Fight is the ordinary action; a Clanrat may use Door instead, while a Rat Ogor may Smash a door during Movement.
+  - Then activate each remaining Noise token once. It moves up to five spaces by a shortest legal route toward the nearest hero and reveals immediately upon entering hero line of sight or an adjacent square.
+  - Noise movement counts as the Movement of every model it reveals. Once the group is placed, offer the normal React window; then each model may take 1 Action but may not Move again that turn.
+  - Finally draw and place two new Noise results. Noise cannot stack in v1; draws are consumed and lost when every spawn square is occupied. Reinforcements do not activate that turn, even when placement causes an immediate reveal.
+  - Noise can reveal at any time. Models revealed outside their own Noise activation do not act immediately and receive their next normal activation during a later Skaven turn.
 - Solo AI:
   - Privately knows noise identities.
-  - Reveals a token at the opening of the Skaven turn when at least one resulting model can move into melee and attack that turn.
   - Places models to maximize immediate attacks, activates models nearest to a reachable hero first, follows shortest legal paths, turns toward a target, and attacks whenever possible.
+  - Moves Noise by a shortest legal route toward the nearest hero. It never evaluates whether revealing would be tactically advantageous; contact determines revelation. Fresh randomness breaks ties between equally short legal routes.
   - Uses Rat Ogor door-smashing and Gutter Runner movement rules where advantageous.
   - Uses fresh randomness for equally scored placements, paths, activation order, and targets; production games are intentionally not replayable.
 - Mission resolution:
@@ -105,7 +106,7 @@ V1 deliberately excludes saved games, persistence, undo, phone-specific pan/zoom
     Guard interruption, doors, nest destruction, Command reset and React timing, and
     phase/round transitions.
   - Fight outcomes, wounds/death, every hero and Skaven ability, reroll timing, Ward, charge placement/detonation, and Rat Ogor damage.
-  - Noise bag depletion, private identity projection, spawn loss, nearest-square group placement, forced/optional reveal, LOS avoidance, and replenishment timing.
+  - Noise bag depletion, private identity projection, spawn loss, nearest-square group placement, forced line-of-sight and adjacency reveals, inherited Movement, post-reveal Actions, outside-activation timing, and reinforcement timing.
   - Every victory/loss condition for rosters of 1 through 5 heroes.
   - AI commands remaining legal under blocked paths and crowded boards, with deterministic test randomness despite fresh production randomness.
   - Transactionality: rejected commands leave the prior state unchanged and produce visible errors.

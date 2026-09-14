@@ -15,8 +15,10 @@ Current playtest rules specification: [`docs/rules.md`](docs/rules.md). In brief
   splittable Movement and 2 Actions (Fight 1 · Door 1 · Guard 1 final · Dash 1).
 - **Command**: Push costs 1 to grant the active hero +1 Action once per activation; React
   costs 2 for one immediate 1-Action reaction after enemy Movement.
-- **Skaven turn**: reveal noise tokens; each revealed Skaven gets one Movement and 1 Action;
-  noise moves 5 toward the nearest hero and cannot enter hero line of sight.
+- **Skaven turn**: activate revealed Skaven, activate Noise, then reinforce. Noise moves up
+  to 5 by a shortest legal route toward the nearest hero and forcibly reveals in hero line
+  of sight or adjacency; its movement becomes the revealed models' Movement, after which
+  they may each take 1 Action but cannot Move again that turn. There is no Reveal action.
 - **Fight**: both roll Fight dice, high die wins, loser takes 1 Wound, tie = nothing.
 - **Entities** carry Move / Fight / Wounds stats plus special abilities (heroes: Gotrek,
   Felix, Snorri, Ulrika, Maximilian, Malakai; Skaven: Clanrat, Gutter Runner, Rat Ogor).
