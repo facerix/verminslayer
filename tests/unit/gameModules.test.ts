@@ -4,6 +4,7 @@ import { test } from 'node:test';
 import type {
   BoardDoorPresentation,
   BoardHeroPresentation,
+  BoardSkavenPresentation,
 } from '../../src/canvas/boardRenderer.ts';
 import { createGameEventDelegate } from '../../src/game/gameModule.ts';
 import type { GameModule } from '../../src/game/gameModule.ts';
@@ -87,6 +88,7 @@ class BoardViewSpy {
   selectedSquare: Position | null = null;
   noiseTokens: readonly { readonly position: Position; readonly revealedLabel?: string }[] = [];
   doors: readonly BoardDoorPresentation[] = [];
+  skaven: readonly BoardSkavenPresentation[] = [];
 }
 
 const deploySingleHero = (session: GameSession, mode: 'solo' | 'two-player') => {
@@ -314,7 +316,7 @@ test('the Hero-turn module chooses a destination before committing movement and 
   completeSoloSetup(session);
   const setup = new SetupViewSpy();
   const board = new BoardViewSpy();
-  const module = new HeroTurnGameModule({ session, setup, board });
+  const module = new HeroTurnGameModule({ session, setup, board, randomSource });
 
   module.render();
   assert.equal(setup.view.phase, 'hero');
@@ -337,13 +339,15 @@ test('the Hero-turn module chooses a destination before committing movement and 
   assert.deepEqual(board.selectedSquare, { row: 15, column: 3 });
   assert.deepEqual(setup.view.heroes[0]?.position, { row: 16, column: 3 });
   assert.equal(setup.view.heroes[0]?.facing, 'north');
-  assert.equal(setup.view.actionsRemaining, 4);
+  assert.equal(setup.view.actionsRemaining, 2);
+  assert.equal(setup.view.movementRemaining, 3);
   assert.deepEqual(board.legalSquares, []);
 
   module.handleEvent(new CustomEvent('hero-move-facing-selected', { detail: 'east' }));
   assert.deepEqual(setup.view.heroes[0]?.position, { row: 15, column: 3 });
   assert.equal(setup.view.heroes[0]?.facing, 'east');
-  assert.equal(setup.view.actionsRemaining, 3);
+  assert.equal(setup.view.actionsRemaining, 2);
+  assert.equal(setup.view.movementRemaining, 2);
   assert.equal(setup.moveSelection, null);
   assert.equal(board.selectedSquare, null);
   assert.deepEqual(board.legalSquares, []);
@@ -354,7 +358,7 @@ test('the Hero-turn module can cancel movement before or after choosing a destin
   completeSoloSetup(session);
   const setup = new SetupViewSpy();
   const board = new BoardViewSpy();
-  const module = new HeroTurnGameModule({ session, setup, board });
+  const module = new HeroTurnGameModule({ session, setup, board, randomSource });
 
   module.handleEvent(
     new CustomEvent('game-command', {
@@ -371,9 +375,78 @@ test('the Hero-turn module can cancel movement before or after choosing a destin
   assert.deepEqual(board.selectedSquare, { row: 15, column: 3 });
   module.handleEvent(new CustomEvent('hero-move-cancelled'));
   assert.deepEqual(setup.view.heroes[0]?.position, { row: 16, column: 3 });
-  assert.equal(setup.view.actionsRemaining, 4);
+  assert.equal(setup.view.actionsRemaining, 2);
   assert.equal(setup.moveSelection, null);
   assert.equal(board.selectedSquare, null);
+});
+
+test('the Hero-turn module automatically resolves a revealed 3C group in solo mode', () => {
+  const drawValues = [0.45, 0, 0];
+  const session = new GameSession(THE_NEST, {
+    next: () => drawValues.shift() ?? 0,
+  });
+  session.dispatch({ type: 'configure-game', mode: 'solo', heroIds: ['felix'] });
+  session.dispatch({
+    type: 'deploy-hero',
+    heroId: 'felix',
+    position: { row: 15, column: 4 },
+    facing: 'north',
+  });
+  for (const spawn of [
+    { row: 10, column: 0 },
+    { row: 0, column: 10 },
+    { row: 8, column: 12 },
+  ]) {
+    session.dispatch({ type: 'draw-initial-noise' });
+    session.dispatch({ type: 'place-initial-noise', position: spawn });
+  }
+
+  const setup = new SetupViewSpy();
+  const board = new BoardViewSpy();
+  const module = new HeroTurnGameModule({
+    session,
+    setup,
+    board,
+    randomSource: { next: () => 0 },
+  });
+  for (const command of [
+    { type: 'start-hero-activation', heroId: 'felix' },
+    {
+      type: 'move-hero',
+      heroId: 'felix',
+      path: [
+        { row: 14, column: 4 },
+        { row: 13, column: 4 },
+        { row: 13, column: 5 },
+      ],
+      facing: 'north',
+    },
+    {
+      type: 'interact-door',
+      heroId: 'felix',
+      position: { row: 12, column: 5 },
+    },
+    { type: 'dash-hero', heroId: 'felix' },
+    {
+      type: 'move-hero',
+      heroId: 'felix',
+      path: [
+        { row: 12, column: 5 },
+        { row: 11, column: 5 },
+        { row: 10, column: 5 },
+      ],
+      facing: 'west',
+    },
+  ] as const) {
+    module.handleEvent(new CustomEvent('game-command', { detail: command }));
+  }
+
+  assert.equal(setup.error, '');
+  assert.deepEqual(session.heroView.revealedNoise, []);
+  assert.equal(session.heroView.skaven.length, 3);
+  assert.equal(board.skaven.length, 3);
+  assert.ok(setup.announced.some(event => event.type === 'noise-revealed'));
+  assert.equal(setup.announced.filter(event => event.type === 'skaven-placed').length, 3);
 });
 
 test('setup and noise modules leave Hero-turn commands for the Hero-turn module', () => {
@@ -383,7 +456,7 @@ test('setup and noise modules leave Hero-turn commands for the Hero-turn module'
   const board = new BoardViewSpy();
   const setupModule = new SetupGameModule({ session, setup, board });
   const noiseModule = new InitialNoiseGameModule({ session, setup, board, randomSource });
-  const heroModule = new HeroTurnGameModule({ session, setup, board });
+  const heroModule = new HeroTurnGameModule({ session, setup, board, randomSource });
   const event = new CustomEvent('game-command', {
     detail: { type: 'start-hero-activation', heroId: 'gotrek' },
   });

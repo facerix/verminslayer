@@ -12,6 +12,15 @@ export interface BoardHeroPresentation {
   readonly activationStatus?: 'ready' | 'active' | 'activated';
 }
 
+export interface BoardSkavenPresentation {
+  readonly id: string;
+  readonly label: string;
+  readonly accessibleLabel: string;
+  readonly position: Position;
+  readonly facing: Facing;
+  readonly woundsRemaining: number;
+}
+
 export interface BoardNoisePresentation {
   readonly position: Position;
   readonly revealedLabel?: string;
@@ -25,6 +34,7 @@ export interface BoardDoorPresentation {
 
 export interface BoardPresentation {
   readonly heroes?: readonly BoardHeroPresentation[];
+  readonly skaven?: readonly BoardSkavenPresentation[];
   readonly noiseTokens?: readonly BoardNoisePresentation[];
   readonly legalSquares?: readonly Position[];
   readonly selectedSquare?: Position | null;
@@ -140,6 +150,30 @@ const drawMarker = (
   context.restore();
 };
 
+const drawWounds = (
+  context: CanvasRenderingContext2D,
+  centerX: number,
+  centerY: number,
+  radius: number,
+  woundsRemaining: number
+) => {
+  const badgeRadius = radius * 0.38;
+  const badgeX = centerX + radius * 0.72;
+  const badgeY = centerY + radius * 0.72;
+  context.beginPath();
+  context.arc(badgeX, badgeY, badgeRadius, 0, Math.PI * 2);
+  context.fillStyle = '#171310';
+  context.fill();
+  context.strokeStyle = '#fff0dc';
+  context.lineWidth = Math.max(1, radius * 0.1);
+  context.stroke();
+  context.fillStyle = '#fff0dc';
+  context.font = `700 ${Math.max(8, radius * 0.62)}px sans-serif`;
+  context.textAlign = 'center';
+  context.textBaseline = 'middle';
+  context.fillText(String(woundsRemaining), badgeX, badgeY);
+};
+
 export const renderBoard = (
   context: CanvasRenderingContext2D,
   board: ParsedMap,
@@ -232,6 +266,42 @@ export const renderBoard = (
     context.restore();
   }
 
+  for (const skaven of presentation.skaven ?? []) {
+    const centerX = geometry.x + (skaven.position.column + 0.5) * geometry.squareSize;
+    const centerY = geometry.y + (skaven.position.row + 0.5) * geometry.squareSize;
+    const radius = geometry.squareSize * 0.34;
+    const facingOffset: Readonly<Record<Facing, readonly [number, number]>> = {
+      north: [0, -1],
+      east: [1, 0],
+      south: [0, 1],
+      west: [-1, 0],
+    };
+    const [dx, dy] = facingOffset[skaven.facing];
+
+    context.save();
+    context.beginPath();
+    context.arc(centerX, centerY, radius, 0, Math.PI * 2);
+    context.fillStyle = '#7f3034';
+    context.fill();
+    context.strokeStyle = '#efb0a7';
+    context.lineWidth = Math.max(2, geometry.squareSize * 0.07);
+    context.stroke();
+    context.beginPath();
+    context.moveTo(centerX + dx * radius * 0.35, centerY + dy * radius * 0.35);
+    context.lineTo(centerX + dx * radius * 1.15, centerY + dy * radius * 1.15);
+    context.strokeStyle = '#efb0a7';
+    context.lineWidth = Math.max(2, geometry.squareSize * 0.09);
+    context.lineCap = 'round';
+    context.stroke();
+    context.fillStyle = '#fff0dc';
+    context.font = `700 ${Math.max(9, geometry.squareSize * 0.25)}px sans-serif`;
+    context.textAlign = 'center';
+    context.textBaseline = 'middle';
+    context.fillText(skaven.label, centerX, centerY);
+    drawWounds(context, centerX, centerY, radius, skaven.woundsRemaining);
+    context.restore();
+  }
+
   for (const hero of presentation.heroes ?? []) {
     const centerX = geometry.x + (hero.position.column + 0.5) * geometry.squareSize;
     const centerY = geometry.y + (hero.position.row + 0.5) * geometry.squareSize;
@@ -264,6 +334,7 @@ export const renderBoard = (
     context.textAlign = 'center';
     context.textBaseline = 'middle';
     context.fillText(hero.label, centerX, centerY);
+    drawWounds(context, centerX, centerY, radius, hero.woundsRemaining);
     context.restore();
   }
 

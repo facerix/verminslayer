@@ -388,7 +388,7 @@ test('initial noise placement accepts only an empty Skaven spawn', () => {
   );
 });
 
-test('three resolved setup draws begin Hero Turn 1 with 3 Command', () => {
+test('three resolved setup draws begin Hero Turn 1 with 2 Command', () => {
   let state = deploy('two-player');
 
   for (const spawn of THE_NEST.board.spawns) {
@@ -403,7 +403,7 @@ test('three resolved setup draws begin Hero Turn 1 with 3 Command', () => {
   assert.equal(state.setupStep, 'complete');
   assert.equal(state.phase, 'hero');
   assert.equal(state.round, 1);
-  assert.equal(state.command, 3);
+  assert.equal(state.command, 2);
   assert.equal(state.initialNoiseDrawsResolved, 3);
   assert.equal(state.concealedNoise.length, 3);
 });
@@ -533,7 +533,7 @@ test('invalid randomness rejects a draw without consuming the bag', () => {
   assert.equal(JSON.stringify(state), before);
 });
 
-test('heroes activate in a chosen order with four Actions each', () => {
+test('heroes activate in a chosen order with one Movement and two Actions each', () => {
   const state = beginHeroTurn(['gotrek', 'felix']);
   const result = resolveCommand(
     state,
@@ -542,14 +542,18 @@ test('heroes activate in a chosen order with four Actions each', () => {
   );
 
   assert.equal(result.state.activeHeroId, 'felix');
-  assert.equal(result.state.actionsRemaining, 4);
+  assert.equal(result.state.actionsRemaining, 2);
+  assert.equal(result.state.movementRemaining, 5);
+  assert.equal(result.state.facingChangeAvailable, true);
+  assert.equal(result.state.dashUsed, false);
+  assert.equal(result.state.pushUsed, false);
   assert.deepEqual(result.state.activatedHeroIds, []);
   assert.deepEqual(result.events, [
-    { type: 'hero-activation-started', heroId: 'felix', actions: 4 },
+    { type: 'hero-activation-started', heroId: 'felix', movement: 5, actions: 2 },
   ]);
 });
 
-test('a Move spends one Action, follows each submitted step, and changes facing once', () => {
+test('Movement can be split around Actions without spending one and permits one facing change', () => {
   const active = resolveCommand(
     beginHeroTurn(),
     { type: 'start-hero-activation', heroId: 'gotrek' } as GameCommand,
@@ -571,14 +575,35 @@ test('a Move spends one Action, follows each submitted step, and changes facing 
 
   assert.deepEqual(result.state.heroes[0]?.position, { row: 15, column: 4 });
   assert.equal(result.state.heroes[0]?.facing, 'east');
-  assert.equal(result.state.actionsRemaining, 3);
+  assert.equal(result.state.actionsRemaining, 2);
+  assert.equal(result.state.movementRemaining, 1);
+  assert.equal(result.state.facingChangeAvailable, false);
   assert.deepEqual(
     result.events.map(event => event.type),
-    ['hero-moved', 'hero-moved', 'hero-facing-changed', 'action-spent']
+    ['hero-moved', 'hero-moved', 'hero-facing-changed', 'movement-spent']
   );
+
+  const afterDash = resolveCommand(
+    result.state,
+    { type: 'dash-hero', heroId: 'gotrek' },
+    randomSource
+  ).state;
+  const afterSecondMovement = resolveCommand(
+    afterDash,
+    {
+      type: 'move-hero',
+      heroId: 'gotrek',
+      path: [{ row: 14, column: 4 }],
+      facing: 'east',
+    },
+    randomSource
+  ).state;
+  assert.equal(afterSecondMovement.actionsRemaining, 1);
+  assert.equal(afterSecondMovement.movementRemaining, 3);
+  assert.deepEqual(afterSecondMovement.heroes[0]?.position, { row: 14, column: 4 });
 });
 
-test('a zero-square Move can change facing and still costs one Action', () => {
+test('a zero-square Movement can change facing without spending an Action', () => {
   const active = resolveCommand(
     beginHeroTurn(),
     { type: 'start-hero-activation', heroId: 'gotrek' } as GameCommand,
@@ -597,7 +622,65 @@ test('a zero-square Move can change facing and still costs one Action', () => {
 
   assert.deepEqual(result.state.heroes[0]?.position, { row: 16, column: 3 });
   assert.equal(result.state.heroes[0]?.facing, 'south');
-  assert.equal(result.state.actionsRemaining, 3);
+  assert.equal(result.state.actionsRemaining, 2);
+  assert.equal(result.state.movementRemaining, 3);
+  assert.equal(result.state.facingChangeAvailable, false);
+  assert.ok(!projectHeroView(result.state).legalMovePaths.some(path => path.steps.length === 0));
+
+  assert.throws(
+    () =>
+      resolveCommand(
+        result.state,
+        { type: 'move-hero', heroId: 'gotrek', path: [], facing: 'west' },
+        randomSource
+      ),
+    (error: unknown) => error instanceof RulesError && error.code === 'FACING_CHANGE_USED'
+  );
+});
+
+test('Dash spends one Action, adds one Move allowance, and can be used once per activation', () => {
+  const active = resolveCommand(
+    beginHeroTurn(),
+    { type: 'start-hero-activation', heroId: 'gotrek' },
+    randomSource
+  ).state;
+  const dashed = resolveCommand(active, { type: 'dash-hero', heroId: 'gotrek' }, randomSource);
+
+  assert.equal(dashed.state.actionsRemaining, 1);
+  assert.equal(dashed.state.movementRemaining, 6);
+  assert.equal(dashed.state.dashUsed, true);
+  assert.deepEqual(dashed.events, [
+    { type: 'action-spent', heroId: 'gotrek', action: 'dash', actionsRemaining: 1 },
+  ]);
+  assert.throws(
+    () => resolveCommand(dashed.state, { type: 'dash-hero', heroId: 'gotrek' }, randomSource),
+    (error: unknown) => error instanceof RulesError && error.code === 'DASH_ALREADY_USED'
+  );
+});
+
+test('Push spends shared Command for one extra Action and is limited to once per activation', () => {
+  const active = resolveCommand(
+    beginHeroTurn(),
+    { type: 'start-hero-activation', heroId: 'gotrek' },
+    randomSource
+  ).state;
+  const pushed = resolveCommand(active, { type: 'push-hero', heroId: 'gotrek' }, randomSource);
+
+  assert.equal(pushed.state.command, 1);
+  assert.equal(pushed.state.actionsRemaining, 3);
+  assert.equal(pushed.state.pushUsed, true);
+  assert.deepEqual(pushed.events, [
+    {
+      type: 'hero-pushed',
+      heroId: 'gotrek',
+      commandRemaining: 1,
+      actionsRemaining: 3,
+    },
+  ]);
+  assert.throws(
+    () => resolveCommand(pushed.state, { type: 'push-hero', heroId: 'gotrek' }, randomSource),
+    (error: unknown) => error instanceof RulesError && error.code === 'PUSH_ALREADY_USED'
+  );
 });
 
 test('movement rejects excessive, diagonal, impassable, and occupied paths transactionally', () => {
@@ -718,7 +801,7 @@ test('an adjacent door interaction opens and closes the door for one Action', ()
     state.doors.find(door => door.position.row === 14 && door.position.column === 6)?.status,
     'open'
   );
-  assert.equal(state.actionsRemaining, 3);
+  assert.equal(state.actionsRemaining, 1);
   assert.ok(
     projectHeroView(state).legalMovePaths.some(
       path => path.destination.row === 14 && path.destination.column === 6
@@ -734,7 +817,7 @@ test('an adjacent door interaction opens and closes the door for one Action', ()
     state.doors.find(door => door.position.row === 14 && door.position.column === 6)?.status,
     'closed'
   );
-  assert.equal(state.actionsRemaining, 2);
+  assert.equal(state.actionsRemaining, 0);
 });
 
 test('opening a door applies its line-of-sight effect immediately', () => {

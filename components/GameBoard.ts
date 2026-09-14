@@ -3,6 +3,7 @@ import type {
   BoardDoorPresentation,
   BoardHeroPresentation,
   BoardNoisePresentation,
+  BoardSkavenPresentation,
 } from '/src/canvas/boardRenderer.js';
 import { pointToSquare } from '/src/canvas/boardGeometry.js';
 import type { BoardGeometry } from '/src/canvas/boardGeometry.js';
@@ -59,6 +60,7 @@ export class GameBoard extends HTMLElement {
   readonly #resizeObserver: ResizeObserver;
   #geometry: BoardGeometry | null = null;
   #heroes: readonly BoardHeroPresentation[] = [];
+  #skaven: readonly BoardSkavenPresentation[] = [];
   #noiseTokens: readonly BoardNoisePresentation[] = [];
   #legalSquares: readonly Position[] = [];
   #selectedSquare: Position | null = null;
@@ -85,6 +87,12 @@ export class GameBoard extends HTMLElement {
 
   set heroes(heroes: readonly BoardHeroPresentation[]) {
     this.#heroes = heroes;
+    this.#updateDescription();
+    this.#draw();
+  }
+
+  set skaven(skaven: readonly BoardSkavenPresentation[]) {
+    this.#skaven = skaven;
     this.#updateDescription();
     this.#draw();
   }
@@ -135,6 +143,7 @@ export class GameBoard extends HTMLElement {
     context.setTransform(pixelRatio, 0, 0, pixelRatio, 0, 0);
     this.#geometry = renderBoard(context, THE_NEST.board, width, height, {
       heroes: this.#heroes,
+      skaven: this.#skaven,
       noiseTokens: this.#noiseTokens,
       legalSquares: this.#legalSquares,
       selectedSquare: this.#selectedSquare,
@@ -192,6 +201,14 @@ export class GameBoard extends HTMLElement {
           )
           .join('; ')}.`
       : '';
+    const skaven = this.#skaven.length
+      ? ` Skaven models: ${this.#skaven
+          .map(
+            model =>
+              `${model.accessibleLabel} at row ${model.position.row + 1}, column ${model.position.column + 1}, facing ${model.facing}, ${model.woundsRemaining} Wounds remaining`
+          )
+          .join('; ')}.`
+      : '';
     const openDoors = this.#doors.filter(door => door.status !== 'closed');
     const doors = openDoors.length
       ? ` Open doors: ${openDoors
@@ -206,6 +223,7 @@ export class GameBoard extends HTMLElement {
       heroes +
       noise +
       reveals +
+      skaven +
       doors +
       selectedSquare;
   }

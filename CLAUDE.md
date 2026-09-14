@@ -19,29 +19,31 @@ Current playtest rules specification: [`docs/rules.md`](docs/rules.md). Key conc
 
 ### Turn structure
 
-- **Hero turn**: heroes gain 3 Command (a shared pool). Each hero activates once with 4
-  Actions.
+- **Hero turn**: reset the shared pool to 2 Command. Each hero activates once with one
+  splittable Movement and 2 Actions.
 - **Skaven turn**: optionally reveal noise tokens in play (those Skaven may act), then
-  activate every revealed Skaven once — move, then optionally fight. Noise tokens move 5
-  toward the nearest hero.
+  activate every revealed Skaven once with one Movement and 1 Action. Noise tokens receive
+  Movement only and move 5 toward the nearest hero.
 
-### Actions (per hero, 4 per activation)
+### Hero activation
 
 | Action | Cost |
 |--------|------|
-| Move | 1 |
 | Fight | 1 |
-| Interact (open/close a door, etc.) | 1 |
-| Guard | 2 |
+| Door (open/close an adjacent door) | 1 |
+| Guard (must be final) | 1 |
+| Dash (once per activation) | 1 |
 
-- **Move / facing**: move up to the Move allowance; once during the move, may change
-  facing to any direction; may move 0. Models do not auto-turn when attacking or
-  defending.
+- **Movement / facing**: Movement equal to the hero's Move may be split before, between,
+  and after Actions. Dash adds Move again. A hero may change facing once per activation,
+  including across Dash movement and during a zero-square segment. Models do not auto-turn.
+- **Command**: Push costs 1 Command for +1 Action once per activation. React costs 2 Command
+  for one immediate eligible 1-Action action after an enemy completes Movement.
 - **Fight**: both sides roll Fight dice, highest die wins, loser takes 1 Wound, tie =
   nothing.
 - **Guard**: place a marker; the first enemy to enter an adjacent square in the hero's
-  front arc triggers a free Fight, then the marker is discarded. Guard is also lost if
-  the hero takes another action or when the hero next activates.
+  front arc triggers a free Fight, then the marker is discarded. Guard is also lost when
+  the hero next activates.
 
 ### Noise
 

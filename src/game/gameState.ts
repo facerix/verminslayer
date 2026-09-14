@@ -1,5 +1,5 @@
-import { HERO_DEFINITIONS, isHeroId } from '/src/game/entities.js';
-import type { HeroId } from '/src/game/entities.js';
+import { HERO_DEFINITIONS, SKAVEN_DEFINITIONS, isHeroId } from '/src/game/entities.js';
+import type { HeroId, SkavenId } from '/src/game/entities.js';
 import type { Position } from '/src/game/map.js';
 import type { MissionDefinition, NoiseResultId } from '/src/game/missionDefinition.js';
 import { getMissionDefinition } from '/src/game/missions/registry.js';
@@ -7,6 +7,8 @@ import { RulesError } from '/src/game/rulesError.js';
 import { hasLineOfSight } from '/src/game/lineOfSight.js';
 import { getReachablePaths, isLegalMovementPath } from '/src/game/pathfinding.js';
 import type { MovementContext, ReachablePath } from '/src/game/pathfinding.js';
+import { resolveOpposedRoll } from '/src/game/combat.js';
+import { getNearestReachablePositions } from '/src/game/skavenPlacement.js';
 
 export type GameMode = 'solo' | 'two-player';
 export type SetupStep = 'select-roster' | 'deploy-heroes' | 'initial-noise' | 'complete';
@@ -40,7 +42,27 @@ export interface PendingNoiseState {
   readonly resultId: NoiseResultId;
 }
 
-export type RevealedNoiseState = ConcealedNoiseState;
+export interface RevealedNoiseState extends ConcealedNoiseState {
+  readonly remainingModels: readonly SkavenId[];
+}
+
+export interface SkavenState {
+  readonly id: string;
+  readonly sourceNoiseId: string;
+  readonly definitionId: SkavenId;
+  readonly woundsRemaining: number;
+  readonly position: Position;
+  readonly facing: Facing;
+}
+
+export interface CombatResult {
+  readonly heroId: HeroId;
+  readonly skavenId: string;
+  readonly skavenDefinitionId: SkavenId;
+  readonly heroRolls: readonly number[];
+  readonly skavenRolls: readonly number[];
+  readonly outcome: 'hero-won' | 'skaven-won' | 'tie';
+}
 
 export interface DoorState {
   readonly position: Position;
@@ -65,11 +87,18 @@ export interface GameState {
   readonly nests: readonly NestState[];
   readonly concealedNoise: readonly ConcealedNoiseState[];
   readonly revealedNoise: readonly RevealedNoiseState[];
+  readonly skaven: readonly SkavenState[];
+  readonly nextSkavenSequence: number;
+  readonly combatLog: readonly CombatResult[];
   readonly pendingNoise: PendingNoiseState | null;
   readonly initialNoiseDrawsResolved: number;
   readonly remainingNoiseBag: readonly NoiseResultId[];
   readonly activeHeroId: HeroId | null;
   readonly actionsRemaining: number | null;
+  readonly movementRemaining: number | null;
+  readonly facingChangeAvailable: boolean;
+  readonly dashUsed: boolean;
+  readonly pushUsed: boolean;
   readonly activatedHeroIds: readonly HeroId[];
   readonly exitedHeroIds: readonly HeroId[];
 }
@@ -104,9 +133,28 @@ export type GameCommand =
       readonly facing: Facing;
     }
   | {
+      readonly type: 'dash-hero';
+      readonly heroId: HeroId;
+    }
+  | {
+      readonly type: 'push-hero';
+      readonly heroId: HeroId;
+    }
+  | {
       readonly type: 'interact-door';
       readonly heroId: HeroId;
       readonly position: Position;
+    }
+  | {
+      readonly type: 'place-revealed-skaven';
+      readonly noiseId: string;
+      readonly position: Position;
+      readonly facing: Facing;
+    }
+  | {
+      readonly type: 'fight-skaven';
+      readonly heroId: HeroId;
+      readonly skavenId: string;
     }
   | {
       readonly type: 'end-hero-activation';
@@ -147,6 +195,7 @@ export type GameEvent =
   | {
       readonly type: 'hero-activation-started';
       readonly heroId: HeroId;
+      readonly movement: number;
       readonly actions: number;
     }
   | {
@@ -163,14 +212,46 @@ export type GameEvent =
   | {
       readonly type: 'action-spent';
       readonly heroId: HeroId;
-      readonly action: 'move' | 'interact';
+      readonly action: 'dash' | 'interact' | 'fight';
+      readonly actionsRemaining: number;
+    }
+  | {
+      readonly type: 'movement-spent';
+      readonly heroId: HeroId;
+      readonly spaces: number;
+      readonly movementRemaining: number;
+    }
+  | {
+      readonly type: 'hero-pushed';
+      readonly heroId: HeroId;
+      readonly commandRemaining: number;
       readonly actionsRemaining: number;
     }
   | { readonly type: 'door-opened'; readonly position: Position }
   | { readonly type: 'door-closed'; readonly position: Position }
   | { readonly type: 'hero-activation-ended'; readonly heroId: HeroId }
   | { readonly type: 'hero-phase-ended'; readonly round: number }
-  | { readonly type: 'skaven-turn-started'; readonly round: number };
+  | { readonly type: 'skaven-turn-started'; readonly round: number }
+  | {
+      readonly type: 'skaven-placed';
+      readonly skavenId: string;
+      readonly definitionId: SkavenId;
+      readonly position: Position;
+      readonly facing: Facing;
+    }
+  | { readonly type: 'revealed-noise-resolved'; readonly noiseId: string }
+  | ({ readonly type: 'fight-rolled' } & CombatResult)
+  | {
+      readonly type: 'model-wounded';
+      readonly faction: 'hero' | 'skaven';
+      readonly modelId: string;
+      readonly woundsRemaining: number;
+    }
+  | {
+      readonly type: 'model-defeated';
+      readonly faction: 'hero' | 'skaven';
+      readonly modelId: string;
+    };
 
 export interface CommandResult {
   readonly state: GameState;
@@ -191,6 +272,7 @@ export interface HeroGameView {
   readonly command: number;
   readonly selectedHeroIds: readonly HeroId[];
   readonly heroes: readonly HeroState[];
+  readonly skaven: readonly SkavenState[];
   readonly noiseTokens: readonly PublicNoiseToken[];
   readonly revealedNoise: readonly RevealedNoiseState[];
   readonly initialNoiseDrawsResolved: number;
@@ -199,10 +281,16 @@ export interface HeroGameView {
   readonly doors: readonly DoorState[];
   readonly activeHeroId: HeroId | null;
   readonly actionsRemaining: number | null;
+  readonly movementRemaining: number | null;
+  readonly facingChangeAvailable: boolean;
+  readonly dashUsed: boolean;
+  readonly pushUsed: boolean;
   readonly activatedHeroIds: readonly HeroId[];
   readonly exitedHeroIds: readonly HeroId[];
   readonly legalMovePaths: readonly ReachablePath[];
   readonly legalDoorInteractions: readonly Position[];
+  readonly legalFightTargetIds: readonly string[];
+  readonly combatLog: readonly CombatResult[];
 }
 
 export interface SkavenGameView extends Omit<HeroGameView, 'noiseTokens'> {
@@ -228,8 +316,34 @@ const freezeNest = (nest: NestState): NestState =>
 const freezeNoise = (noise: ConcealedNoiseState): ConcealedNoiseState =>
   Object.freeze({ ...noise, position: freezePosition(noise.position) });
 
+const freezeRevealedNoise = (noise: RevealedNoiseState): RevealedNoiseState =>
+  Object.freeze({
+    ...noise,
+    position: freezePosition(noise.position),
+    remainingModels: Object.freeze([...noise.remainingModels]),
+  });
+
+const freezeSkaven = (skaven: SkavenState): SkavenState =>
+  Object.freeze({ ...skaven, position: freezePosition(skaven.position) });
+
+const freezeCombatResult = (result: CombatResult): CombatResult =>
+  Object.freeze({
+    ...result,
+    heroRolls: Object.freeze([...result.heroRolls]),
+    skavenRolls: Object.freeze([...result.skavenRolls]),
+  });
+
 const freezePendingNoise = (noise: PendingNoiseState): PendingNoiseState =>
   Object.freeze({ ...noise });
+
+const revealNoiseState = (
+  noise: ConcealedNoiseState,
+  mission: MissionDefinition
+): RevealedNoiseState =>
+  freezeRevealedNoise({
+    ...noise,
+    remainingModels: mission.noiseResults[noise.resultId].models,
+  });
 
 const freezeState = (state: GameState): GameState =>
   Object.freeze({
@@ -239,7 +353,9 @@ const freezeState = (state: GameState): GameState =>
     doors: Object.freeze(state.doors.map(freezeDoor)),
     nests: Object.freeze(state.nests.map(freezeNest)),
     concealedNoise: Object.freeze(state.concealedNoise.map(freezeNoise)),
-    revealedNoise: Object.freeze(state.revealedNoise.map(freezeNoise)),
+    revealedNoise: Object.freeze(state.revealedNoise.map(freezeRevealedNoise)),
+    skaven: Object.freeze(state.skaven.map(freezeSkaven)),
+    combatLog: Object.freeze(state.combatLog.map(freezeCombatResult)),
     pendingNoise: state.pendingNoise ? freezePendingNoise(state.pendingNoise) : null,
     remainingNoiseBag: Object.freeze([...state.remainingNoiseBag]),
     activatedHeroIds: Object.freeze([...state.activatedHeroIds]),
@@ -301,11 +417,18 @@ export const createInitialGameState = (mission: MissionDefinition): GameState =>
     nests: mission.board.nests.map(position => ({ position, status: 'intact' as const })),
     concealedNoise: [],
     revealedNoise: [],
+    skaven: [],
+    nextSkavenSequence: 1,
+    combatLog: [],
     pendingNoise: null,
     initialNoiseDrawsResolved: 0,
     remainingNoiseBag: mission.noiseBag,
     activeHeroId: null,
     actionsRemaining: null,
+    movementRemaining: null,
+    facingChangeAvailable: false,
+    dashUsed: false,
+    pushUsed: false,
     activatedHeroIds: [],
     exitedHeroIds: [],
   });
@@ -352,6 +475,7 @@ const isHeroEligible = (state: GameState, hero: HeroState) =>
 const isPositionOccupied = (state: GameState, position: Position) =>
   [
     ...state.heroes.flatMap(hero => (hero.position ? [hero.position] : [])),
+    ...state.skaven.map(skaven => skaven.position),
     ...state.concealedNoise.map(noise => noise.position),
     ...state.revealedNoise.map(noise => noise.position),
   ].some(occupant => samePosition(occupant, position));
@@ -359,7 +483,8 @@ const isPositionOccupied = (state: GameState, position: Position) =>
 const getMovementContext = (
   state: GameState,
   mission: MissionDefinition,
-  hero: HeroState
+  hero: HeroState,
+  maximumSteps = state.movementRemaining ?? 0
 ): MovementContext => {
   if (!hero.position) {
     throw new RulesError('HERO_NOT_ELIGIBLE', 'Only a deployed, living hero can move');
@@ -367,7 +492,7 @@ const getMovementContext = (
   return {
     board: mission.board,
     start: hero.position,
-    maximumSteps: HERO_DEFINITIONS[hero.definitionId].stats.move,
+    maximumSteps,
     closedDoors: state.doors.filter(door => door.status === 'closed').map(door => door.position),
     blockedPositions: [
       ...state.heroes.flatMap(candidate =>
@@ -375,10 +500,73 @@ const getMovementContext = (
       ),
       ...state.concealedNoise.map(noise => noise.position),
       ...state.revealedNoise.map(noise => noise.position),
+      ...state.skaven.map(skaven => skaven.position),
       ...state.nests.filter(nest => nest.status === 'intact').map(nest => nest.position),
     ],
     exitOpen: state.nests.every(nest => nest.status === 'destroyed'),
   };
+};
+
+export const getLegalFightTargetIds = (state: GameState): readonly string[] => {
+  if (
+    state.phase !== 'hero' ||
+    !state.activeHeroId ||
+    (state.actionsRemaining ?? 0) < 1 ||
+    state.revealedNoise.length > 0
+  ) {
+    return Object.freeze([]);
+  }
+  const hero = state.heroes.find(candidate => candidate.id === state.activeHeroId);
+  if (!hero?.position) return Object.freeze([]);
+  return Object.freeze(
+    state.skaven
+      .filter(
+        skaven =>
+          Math.max(
+            Math.abs(skaven.position.row - hero.position!.row),
+            Math.abs(skaven.position.column - hero.position!.column)
+          ) === 1
+      )
+      .map(skaven => skaven.id)
+  );
+};
+
+export const getLegalSkavenPlacementPositions = (
+  state: GameState,
+  mission: MissionDefinition,
+  noiseId: string
+): readonly Position[] => {
+  assertMissionMatches(state, mission);
+  const noise = state.revealedNoise.find(candidate => candidate.id === noiseId);
+  if (!noise || noise.remainingModels.length === 0) return Object.freeze([]);
+
+  const unavailableDestinations = [
+    ...state.heroes.flatMap(hero => (hero.position ? [hero.position] : [])),
+    ...state.skaven.map(skaven => skaven.position),
+    ...state.concealedNoise.map(candidate => candidate.position),
+    ...state.revealedNoise
+      .filter(candidate => candidate.id !== noise.id)
+      .map(candidate => candidate.position),
+  ];
+  const blockedPositions = [
+    ...state.heroes.flatMap(hero => (hero.position ? [hero.position] : [])),
+    ...state.skaven
+      .filter(skaven => skaven.sourceNoiseId !== noise.id)
+      .map(skaven => skaven.position),
+    ...state.concealedNoise.map(candidate => candidate.position),
+    ...state.revealedNoise
+      .filter(candidate => candidate.id !== noise.id)
+      .map(candidate => candidate.position),
+  ];
+  return getNearestReachablePositions({
+    board: mission.board,
+    start: noise.position,
+    maximumSteps: mission.board.width * mission.board.height,
+    closedDoors: state.doors.filter(door => door.status === 'closed').map(door => door.position),
+    blockedPositions,
+    unavailableDestinations,
+    exitOpen: state.nests.every(nest => nest.status === 'destroyed'),
+  });
 };
 
 export const getLegalHeroMovePaths = (
@@ -386,11 +574,20 @@ export const getLegalHeroMovePaths = (
   mission: MissionDefinition
 ): readonly ReachablePath[] => {
   assertMissionMatches(state, mission);
-  if (state.phase !== 'hero' || !state.activeHeroId || (state.actionsRemaining ?? 0) < 1) {
+  if (
+    state.phase !== 'hero' ||
+    !state.activeHeroId ||
+    ((state.movementRemaining ?? 0) < 1 && !state.facingChangeAvailable) ||
+    state.revealedNoise.length > 0
+  ) {
     return Object.freeze([]);
   }
   const hero = state.heroes.find(candidate => candidate.id === state.activeHeroId);
-  return hero ? getReachablePaths(getMovementContext(state, mission, hero)) : Object.freeze([]);
+  if (!hero) return Object.freeze([]);
+  const paths = getReachablePaths(getMovementContext(state, mission, hero));
+  return state.facingChangeAvailable
+    ? paths
+    : Object.freeze(paths.filter(path => path.steps.length > 0));
 };
 
 export const getLegalDoorInteractions = (
@@ -398,7 +595,12 @@ export const getLegalDoorInteractions = (
   mission: MissionDefinition
 ): readonly Position[] => {
   assertMissionMatches(state, mission);
-  if (state.phase !== 'hero' || !state.activeHeroId || (state.actionsRemaining ?? 0) < 1) {
+  if (
+    state.phase !== 'hero' ||
+    !state.activeHeroId ||
+    (state.actionsRemaining ?? 0) < 1 ||
+    state.revealedNoise.length > 0
+  ) {
     return Object.freeze([]);
   }
   const hero = state.heroes.find(candidate => candidate.id === state.activeHeroId);
@@ -426,6 +628,7 @@ export const getLegalNoiseSpawnPositions = (
   assertMissionMatches(state, mission);
   const occupied = [...state.concealedNoise, ...state.revealedNoise].map(noise => noise.position);
   occupied.push(...state.heroes.flatMap(hero => (hero.position ? [hero.position] : [])));
+  occupied.push(...state.skaven.map(skaven => skaven.position));
   return Object.freeze(
     mission.board.spawns
       .filter(spawn => !occupied.some(position => samePosition(position, spawn)))
@@ -443,7 +646,7 @@ const completeInitialNoiseIfReady = (
   }
 
   const round = 1;
-  const command = state.command + 3;
+  const command = 2;
   return Object.freeze({
     state: freezeState({
       ...state,
@@ -454,6 +657,10 @@ const completeInitialNoiseIfReady = (
       pendingNoise: null,
       activeHeroId: null,
       actionsRemaining: null,
+      movementRemaining: null,
+      facingChangeAvailable: false,
+      dashUsed: false,
+      pushUsed: false,
       activatedHeroIds: [],
     }),
     events: Object.freeze([
@@ -686,7 +893,7 @@ const placeInitialNoise = (
       concealedNoise: revealed ? state.concealedNoise : [...state.concealedNoise, noise],
       revealedNoise:
         revealed && noise.resultId !== 'nothing'
-          ? [...state.revealedNoise, noise]
+          ? [...state.revealedNoise, revealNoiseState(noise, mission)]
           : state.revealedNoise,
     },
     mission,
@@ -702,6 +909,12 @@ const assertHeroPhase = (state: GameState) => {
 
 const getActiveHero = (state: GameState, heroId: HeroId): HeroState => {
   assertHeroPhase(state);
+  if (state.revealedNoise.length > 0) {
+    throw new RulesError(
+      'SKAVEN_PLACEMENT_REQUIRED',
+      'Place every model from revealed noise before continuing the Hero activation'
+    );
+  }
   if (!state.activeHeroId || state.actionsRemaining === null) {
     throw new RulesError('NO_ACTIVE_HERO', 'Choose a hero to activate first');
   }
@@ -745,7 +958,9 @@ const revealVisibleNoise = (
       concealedNoise: state.concealedNoise.filter(noise => !visibleIds.has(noise.id)),
       revealedNoise: [
         ...state.revealedNoise,
-        ...visible.filter(noise => noise.resultId !== 'nothing'),
+        ...visible
+          .filter(noise => noise.resultId !== 'nothing')
+          .map(noise => revealNoiseState(noise, mission)),
       ],
     },
     events: Object.freeze(
@@ -765,6 +980,12 @@ const startHeroActivation = (
   command: Extract<GameCommand, { type: 'start-hero-activation' }>
 ): CommandResult => {
   assertHeroPhase(state);
+  if (state.revealedNoise.length > 0) {
+    throw new RulesError(
+      'SKAVEN_PLACEMENT_REQUIRED',
+      'Place every model from revealed noise before starting an activation'
+    );
+  }
   if (state.activeHeroId) {
     throw new RulesError('ACTIVATION_IN_PROGRESS', 'End the current activation first');
   }
@@ -778,13 +999,23 @@ const startHeroActivation = (
       `${HERO_DEFINITIONS[hero.id].name} already activated`
     );
   }
-  const actions = 4;
+  const movement = HERO_DEFINITIONS[hero.definitionId].stats.move;
+  const actions = 2;
   return Object.freeze({
-    state: freezeState({ ...state, activeHeroId: hero.id, actionsRemaining: actions }),
+    state: freezeState({
+      ...state,
+      activeHeroId: hero.id,
+      actionsRemaining: actions,
+      movementRemaining: movement,
+      facingChangeAvailable: true,
+      dashUsed: false,
+      pushUsed: false,
+    }),
     events: Object.freeze([
       Object.freeze({
         type: 'hero-activation-started' as const,
         heroId: hero.id,
+        movement,
         actions,
       }),
     ]),
@@ -797,9 +1028,21 @@ const moveHero = (
   mission: MissionDefinition
 ): CommandResult => {
   const hero = getActiveHero(state, command.heroId);
-  assertActionAvailable(state);
   if (!isFacing(command.facing)) {
     throw new RulesError('INVALID_FACING', 'Choose north, east, south, or west facing');
+  }
+  const facingChanged = hero.facing !== command.facing;
+  if (command.path.length === 0 && !facingChanged) {
+    throw new RulesError(
+      'INVALID_MOVEMENT_PATH',
+      'A zero-square Movement must change the hero’s facing'
+    );
+  }
+  if (facingChanged && !state.facingChangeAvailable) {
+    throw new RulesError(
+      'FACING_CHANGE_USED',
+      'A hero may only change facing once during an activation'
+    );
   }
   if (!isLegalMovementPath(getMovementContext(state, mission, hero), command.path)) {
     throw new RulesError(
@@ -833,7 +1076,7 @@ const moveHero = (
     from = step;
   }
 
-  if (hero.facing !== command.facing) {
+  if (facingChanged) {
     workingState = {
       ...workingState,
       heroes: workingState.heroes.map(candidate =>
@@ -849,18 +1092,82 @@ const moveHero = (
     );
   }
 
-  const actionsRemaining = state.actionsRemaining! - 1;
+  const movementRemaining = state.movementRemaining! - command.path.length;
   events.push(
     Object.freeze({
-      type: 'action-spent' as const,
+      type: 'movement-spent' as const,
       heroId: hero.id,
-      action: 'move' as const,
-      actionsRemaining,
+      spaces: command.path.length,
+      movementRemaining,
     })
   );
   return Object.freeze({
-    state: freezeState({ ...workingState, actionsRemaining }),
+    state: freezeState({
+      ...workingState,
+      movementRemaining,
+      facingChangeAvailable: state.facingChangeAvailable && !facingChanged,
+    }),
     events: Object.freeze(events),
+  });
+};
+
+const dashHero = (
+  state: GameState,
+  command: Extract<GameCommand, { type: 'dash-hero' }>
+): CommandResult => {
+  const hero = getActiveHero(state, command.heroId);
+  assertActionAvailable(state);
+  if (state.dashUsed) {
+    throw new RulesError('DASH_ALREADY_USED', 'A hero may only Dash once per activation');
+  }
+  const actionsRemaining = state.actionsRemaining! - 1;
+  return Object.freeze({
+    state: freezeState({
+      ...state,
+      actionsRemaining,
+      movementRemaining:
+        (state.movementRemaining ?? 0) + HERO_DEFINITIONS[hero.definitionId].stats.move,
+      dashUsed: true,
+    }),
+    events: Object.freeze([
+      Object.freeze({
+        type: 'action-spent' as const,
+        heroId: hero.id,
+        action: 'dash' as const,
+        actionsRemaining,
+      }),
+    ]),
+  });
+};
+
+const pushHero = (
+  state: GameState,
+  command: Extract<GameCommand, { type: 'push-hero' }>
+): CommandResult => {
+  const hero = getActiveHero(state, command.heroId);
+  if (state.pushUsed) {
+    throw new RulesError('PUSH_ALREADY_USED', 'A hero may only be Pushed once per activation');
+  }
+  if (state.command < 1) {
+    throw new RulesError('NOT_ENOUGH_COMMAND', 'Push requires 1 Command');
+  }
+  const commandRemaining = state.command - 1;
+  const actionsRemaining = state.actionsRemaining! + 1;
+  return Object.freeze({
+    state: freezeState({
+      ...state,
+      command: commandRemaining,
+      actionsRemaining,
+      pushUsed: true,
+    }),
+    events: Object.freeze([
+      Object.freeze({
+        type: 'hero-pushed' as const,
+        heroId: hero.id,
+        commandRemaining,
+        actionsRemaining,
+      }),
+    ]),
   });
 };
 
@@ -922,6 +1229,199 @@ const interactDoor = (
   return Object.freeze({ state: freezeState(workingState), events: Object.freeze(events) });
 };
 
+const placeRevealedSkaven = (
+  state: GameState,
+  command: Extract<GameCommand, { type: 'place-revealed-skaven' }>,
+  mission: MissionDefinition
+): CommandResult => {
+  const noise = state.revealedNoise.find(candidate => candidate.id === command.noiseId);
+  if (!noise) {
+    throw new RulesError('UNKNOWN_REVEALED_NOISE', 'Choose a revealed noise group to resolve');
+  }
+  if (!isFacing(command.facing)) {
+    throw new RulesError('INVALID_FACING', 'Choose north, east, south, or west facing');
+  }
+  const legalPositions = getLegalSkavenPlacementPositions(state, mission, noise.id);
+  if (!legalPositions.some(position => samePosition(position, command.position))) {
+    throw new RulesError(
+      'INVALID_SKAVEN_PLACEMENT',
+      'Place the model on a highlighted nearest empty reachable square'
+    );
+  }
+
+  const definitionId = noise.remainingModels[0];
+  if (!definitionId) {
+    throw new RulesError('UNKNOWN_REVEALED_NOISE', 'This revealed noise group is already resolved');
+  }
+  const skavenId = `skaven-${String(state.nextSkavenSequence)}`;
+  const skaven: SkavenState = {
+    id: skavenId,
+    sourceNoiseId: noise.id,
+    definitionId,
+    woundsRemaining: SKAVEN_DEFINITIONS[definitionId].stats.wounds,
+    position: command.position,
+    facing: command.facing,
+  };
+  const remainingModels = noise.remainingModels.slice(1);
+  const resolved = remainingModels.length === 0;
+  const events: GameEvent[] = [
+    Object.freeze({
+      type: 'skaven-placed' as const,
+      skavenId,
+      definitionId,
+      position: freezePosition(command.position),
+      facing: command.facing,
+    }),
+  ];
+  if (resolved) {
+    events.push(Object.freeze({ type: 'revealed-noise-resolved' as const, noiseId: noise.id }));
+  }
+
+  return Object.freeze({
+    state: freezeState({
+      ...state,
+      skaven: [...state.skaven, skaven],
+      nextSkavenSequence: state.nextSkavenSequence + 1,
+      revealedNoise: resolved
+        ? state.revealedNoise.filter(candidate => candidate.id !== noise.id)
+        : state.revealedNoise.map(candidate =>
+            candidate.id === noise.id ? { ...candidate, remainingModels } : candidate
+          ),
+    }),
+    events: Object.freeze(events),
+  });
+};
+
+const fightSkaven = (
+  state: GameState,
+  command: Extract<GameCommand, { type: 'fight-skaven' }>,
+  randomSource: RandomSource
+): CommandResult => {
+  const hero = getActiveHero(state, command.heroId);
+  assertActionAvailable(state);
+  const skaven = state.skaven.find(candidate => candidate.id === command.skavenId);
+  if (!skaven) {
+    throw new RulesError('UNKNOWN_FIGHT_TARGET', 'Choose a living Skaven model to fight');
+  }
+  if (
+    !hero.position ||
+    Math.max(
+      Math.abs(hero.position.row - skaven.position.row),
+      Math.abs(hero.position.column - skaven.position.column)
+    ) !== 1
+  ) {
+    throw new RulesError('FIGHT_TARGET_NOT_ADJACENT', 'Fight an adjacent Skaven model');
+  }
+
+  const { heroRolls, skavenRolls, outcome } = resolveOpposedRoll(
+    HERO_DEFINITIONS[hero.definitionId].stats.fight,
+    SKAVEN_DEFINITIONS[skaven.definitionId].stats.fight,
+    randomSource
+  );
+  const combatResult = freezeCombatResult({
+    heroId: hero.id,
+    skavenId: skaven.id,
+    skavenDefinitionId: skaven.definitionId,
+    heroRolls,
+    skavenRolls,
+    outcome,
+  });
+  const events: GameEvent[] = [Object.freeze({ type: 'fight-rolled' as const, ...combatResult })];
+  let heroes = state.heroes;
+  let skavenModels = state.skaven;
+
+  if (outcome === 'hero-won') {
+    const woundsRemaining = Math.max(0, skaven.woundsRemaining - 1);
+    events.push(
+      Object.freeze({
+        type: 'model-wounded' as const,
+        faction: 'skaven' as const,
+        modelId: skaven.id,
+        woundsRemaining,
+      })
+    );
+    skavenModels =
+      woundsRemaining === 0
+        ? state.skaven.filter(candidate => candidate.id !== skaven.id)
+        : state.skaven.map(candidate =>
+            candidate.id === skaven.id ? { ...candidate, woundsRemaining } : candidate
+          );
+    if (woundsRemaining === 0) {
+      events.push(
+        Object.freeze({
+          type: 'model-defeated' as const,
+          faction: 'skaven' as const,
+          modelId: skaven.id,
+        })
+      );
+    }
+  } else if (outcome === 'skaven-won') {
+    const woundsRemaining = Math.max(0, hero.woundsRemaining - 1);
+    events.push(
+      Object.freeze({
+        type: 'model-wounded' as const,
+        faction: 'hero' as const,
+        modelId: hero.id,
+        woundsRemaining,
+      })
+    );
+    heroes = state.heroes.map(candidate =>
+      candidate.id === hero.id
+        ? {
+            ...candidate,
+            woundsRemaining,
+            position: woundsRemaining === 0 ? null : candidate.position,
+          }
+        : candidate
+    );
+    if (woundsRemaining === 0) {
+      events.push(
+        Object.freeze({
+          type: 'model-defeated' as const,
+          faction: 'hero' as const,
+          modelId: hero.id,
+        }),
+        Object.freeze({ type: 'hero-activation-ended' as const, heroId: hero.id })
+      );
+      return Object.freeze({
+        state: freezeState({
+          ...state,
+          heroes,
+          combatLog: [...state.combatLog, combatResult],
+          activeHeroId: null,
+          actionsRemaining: null,
+          movementRemaining: null,
+          facingChangeAvailable: false,
+          dashUsed: false,
+          pushUsed: false,
+          activatedHeroIds: [...state.activatedHeroIds, hero.id],
+        }),
+        events: Object.freeze(events),
+      });
+    }
+  }
+
+  const actionsRemaining = state.actionsRemaining! - 1;
+  events.push(
+    Object.freeze({
+      type: 'action-spent' as const,
+      heroId: hero.id,
+      action: 'fight' as const,
+      actionsRemaining,
+    })
+  );
+  return Object.freeze({
+    state: freezeState({
+      ...state,
+      heroes,
+      skaven: skavenModels,
+      combatLog: [...state.combatLog, combatResult],
+      actionsRemaining,
+    }),
+    events: Object.freeze(events),
+  });
+};
+
 const endHeroActivation = (
   state: GameState,
   command: Extract<GameCommand, { type: 'end-hero-activation' }>
@@ -938,6 +1438,10 @@ const endHeroActivation = (
       ...state,
       activeHeroId: null,
       actionsRemaining: null,
+      movementRemaining: null,
+      facingChangeAvailable: false,
+      dashUsed: false,
+      pushUsed: false,
       activatedHeroIds: [...state.activatedHeroIds, hero.id],
     }),
     events: Object.freeze([
@@ -951,6 +1455,12 @@ const endHeroPhase = (
   command: Extract<GameCommand, { type: 'end-hero-phase' }>
 ): CommandResult => {
   assertHeroPhase(state);
+  if (state.revealedNoise.length > 0) {
+    throw new RulesError(
+      'SKAVEN_PLACEMENT_REQUIRED',
+      'Place every model from revealed noise before ending the Hero phase'
+    );
+  }
   if (state.activeHeroId) {
     throw new RulesError('ACTIVATION_IN_PROGRESS', 'End the current activation first');
   }
@@ -964,7 +1474,15 @@ const endHeroPhase = (
     throw new RulesError('CONFIRMATION_REQUIRED', 'Confirm ending the Hero phase');
   }
   return Object.freeze({
-    state: freezeState({ ...state, phase: 'skaven', actionsRemaining: null }),
+    state: freezeState({
+      ...state,
+      phase: 'skaven',
+      actionsRemaining: null,
+      movementRemaining: null,
+      facingChangeAvailable: false,
+      dashUsed: false,
+      pushUsed: false,
+    }),
     events: Object.freeze([
       Object.freeze({ type: 'hero-phase-ended' as const, round: state.round }),
       Object.freeze({ type: 'skaven-turn-started' as const, round: state.round }),
@@ -992,8 +1510,16 @@ export const resolveCommand = (
       return startHeroActivation(state, command);
     case 'move-hero':
       return moveHero(state, command, mission);
+    case 'dash-hero':
+      return dashHero(state, command);
+    case 'push-hero':
+      return pushHero(state, command);
     case 'interact-door':
       return interactDoor(state, command, mission);
+    case 'place-revealed-skaven':
+      return placeRevealedSkaven(state, command, mission);
+    case 'fight-skaven':
+      return fightSkaven(state, command, randomSource);
     case 'end-hero-activation':
       return endHeroActivation(state, command);
     case 'end-hero-phase':
@@ -1023,17 +1549,24 @@ export const projectHeroView = (state: GameState): HeroGameView =>
           Object.freeze({ id: noise.id, position: freezePosition(noise.position) })
         )
       ),
-      revealedNoise: Object.freeze(state.revealedNoise.map(freezeNoise)),
+      revealedNoise: Object.freeze(state.revealedNoise.map(freezeRevealedNoise)),
+      skaven: Object.freeze(state.skaven.map(freezeSkaven)),
       initialNoiseDrawsResolved: state.initialNoiseDrawsResolved,
       initialNoiseCount: mission.initialNoiseCount,
       remainingNoiseCount: state.remainingNoiseBag.length,
       doors: Object.freeze(state.doors.map(freezeDoor)),
       activeHeroId: state.activeHeroId,
       actionsRemaining: state.actionsRemaining,
+      movementRemaining: state.movementRemaining,
+      facingChangeAvailable: state.facingChangeAvailable,
+      dashUsed: state.dashUsed,
+      pushUsed: state.pushUsed,
       activatedHeroIds: Object.freeze([...state.activatedHeroIds]),
       exitedHeroIds: Object.freeze([...state.exitedHeroIds]),
       legalMovePaths: getLegalHeroMovePaths(state, mission),
       legalDoorInteractions: getLegalDoorInteractions(state, mission),
+      legalFightTargetIds: getLegalFightTargetIds(state),
+      combatLog: Object.freeze(state.combatLog.map(freezeCombatResult)),
     });
   })();
 

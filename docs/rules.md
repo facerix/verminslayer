@@ -1,21 +1,26 @@
 # Verminslayer: Current Playtest Rules
 
-This document is the current rules specification implemented by the digital prototype.
-Use it to playtest the game, identify problems, and iterate on the rules before they are
-translated into the physical Verminslayer board game. It is deliberately a living document;
-the digital implementation may change as playtesting reveals better choices.
+This document is the authoritative current playtest rules specification. Use it to playtest
+the game, identify problems, and iterate on the rules before they are translated into the
+physical Verminslayer board game. It is deliberately a living document; see
+[`mvp-progress.md`](mvp-progress.md) for the subset currently enforced by the digital prototype.
 
 ### HERO TURN
--   Gain 3 Command.
--   Each hero activates once with 4 Actions.
-    
+
+- Set the shared pool to 2 Command. Unused Command from the previous round is lost.
+- Each hero activates once, in any order. An activation provides one Movement and 2 Actions.
+- A hero may split its Movement before, between, and after its Actions.
 
 ### SKAVEN TURN
--   Optionally reveal any noise tokens already in play. Those Skaven can act this turn.
--   Activate every revealed Skaven once, in any order: move, then optionally fight
--   Move noise 5
+
+- Optionally reveal any noise tokens already in play. Those Skaven can act this turn.
+- Activate every revealed Skaven once, in any order. Each gets one Movement and 1 Action.
+- A Skaven Action is normally Fight. A Clanrat may instead use it to open or close an
+  adjacent door. A Rat Ogor's Smash lets it destroy a closed door during movement.
+- Move each noise token up to 5 spaces. Noise receives Movement only and no Action.
 
 ### NOISE
+
 - Face-down and hidden from the Hero player.
 - A noise token cannot enter a square in any hero's line of sight and reveals when seen.
 - Noise tokens cannot share a square. A drawn result is consumed without placing a token
@@ -26,22 +31,43 @@ Place each result face down on an empty Skaven spawn before drawing the next. In
 two-player game, only the Skaven player sees each identity; in a solo game, the Skaven AI
 chooses the spawn without showing the identity. A token placed in a hero's line of sight
 reveals immediately. After all three draws are resolved, Hero Turn 1 begins and the heroes
-gain 3 Command.
+set the shared pool to 2 Command.
+
+### COMMAND
+
+Command is a shared reserve. Unused Command remains available through the Skaven turn, then
+disappears when the next Hero turn resets the pool to 2.
+
+- **Push — 1 Command:** The currently active hero gains 1 additional Action. A hero may only
+  be Pushed once per activation.
+- **React — 2 Command:** During the Skaven turn, after a revealed enemy completes its
+  Movement, one hero may immediately perform one action that normally costs exactly 1 Action.
+  React cannot be used for Dash, Guard, or a mission action.
 
 ### ACTIONS
--   Move — 1A
--   Fight — 1A
--   Interact (e.g. open/close a door) — 1A
--   Guard — 2A
-    
+
+| Action         |       Cost | Effect                                                                    |
+| -------------- | ---------: | ------------------------------------------------------------------------- |
+| Fight          |   1 Action | Make a melee attack.                                                      |
+| Door           |   1 Action | Open or close an adjacent door.                                           |
+| Guard          |   1 Action | Enter Guard; this must be the hero's final Action.                        |
+| Dash           |   1 Action | Add the hero's Move value to its remaining Movement; once per activation. |
+| Hero ability   |    As card | Use the named ability.                                                    |
+| Mission action | As mission | Resolve the named mission effect.                                         |
 
 ### MOVE / FACING
+
 - Models move orthogonally and cannot move through or finish on another model's square.
   Gutter Runners are the exception described by Skitter.
 - Heroes cannot move through or finish on an intact nest. Skaven can move through and finish
   on nests. Once destroyed, a nest no longer blocks hero movement.
-- When a model takes a Move action, it may follow any legal path up to its Move allowance.
-  Once during that movement, it may change its facing to any direction. It may move 0.
+- A hero receives Movement equal to its Move value when it activates. It may spend that
+  allowance in any number of segments before, between, and after Actions. Dash adds its Move
+  value to the same remaining allowance.
+- Once per activation, including across Dash movement, a hero may change facing to any
+  direction during a Movement segment. Moving 0 and changing facing is legal.
+- A Skaven may follow any legal path up to its Move value and change facing once during that
+  Movement. Moving 0 and changing facing is legal.
 - Facing is north, east, south, or west. A model's Front Arc is the three adjacent squares
   on its facing side.
 - Models do not turn automatically when attacking or defending.
@@ -65,16 +91,17 @@ gain 3 Command.
   do not block movement or line of sight.
 
 ### FIGHT
--   Roll Fight dice: Highest die wins.
--   Tie = nothing. Loser suffers 1 Wound.
-    
+
+- Roll Fight dice: Highest die wins.
+- Tie = nothing. Loser suffers 1 Wound.
 
 ### GUARD
--   Place a Guard marker beside the hero.
--   The first time an enemy enters an adjacent square in the hero’s Front Arc, the hero immediately makes a free Fight against that enemy, before it continues its activation.
--   Then discard the Guard marker.
--   Guard is also lost if the hero performs another action, or when that hero next activates.
-    
+
+- Guard costs 1 Action and must be the hero's final Action.
+- Place a Guard marker beside the hero.
+- The first time an enemy enters an adjacent square in the hero's Front Arc, the hero
+  immediately makes a free Fight against that enemy before it continues its activation.
+- Then discard the Guard marker. Guard is also lost when that hero next activates.
 
 ## Hero Cards
 
@@ -94,7 +121,7 @@ gain 3 Command.
 
 **Karaghul** — Once per round, Felix may reroll one of his Fight dice.
 
-**Rememberer** — Once per round, Felix may spend 1 Command to let a hero within 4 squares reroll one die.
+**Rememberer** — Once per round, a hero within 4 squares of Felix may reroll one Fight die.
 
 ----------
 ### SNORRI NOSEBITER
@@ -218,7 +245,7 @@ The Skaven win if all selected heroes are slain, or if the heroes have not fulfi
 #..#..#..N:.#
 #.....#...:.#
 #.##..#.:...#
-#######+#####
+####+##+#####
 #.....#.~~~~#
 #.~~~.#.....S
 #.~~~.#.~...#
@@ -246,10 +273,10 @@ S.~~~.+.~...#
 
 #### Noise bag
 
-| Model(s)    | Quantity |
-|---------------|----|
-| 2 Clanrats    | x8 |
-| 3 Clanrats    | x4 |
-| Gutter Runner | x2 |
-| Rat Ogor      | x1 |
-| Nothing       | x5 |
+| Model(s)      | Quantity |
+| ------------- | -------- |
+| 2 Clanrats    | x8       |
+| 3 Clanrats    | x4       |
+| Gutter Runner | x2       |
+| Rat Ogor      | x1       |
+| Nothing       | x5       |

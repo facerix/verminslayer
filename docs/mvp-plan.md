@@ -27,7 +27,8 @@ V1 deliberately excludes saved games, persistence, undo, phone-specific pan/zoom
   - Models move orthogonally and may not share squares.
   - Melee, adjacency, deployment proximity, and front arcs include diagonals.
   - Facing is north/east/south/west; the front arc is the three adjacent squares on the facing side.
-  - A Move may follow any legal orthogonal path up to the model’s allowance and permits one facing change, including during a zero-square Move.
+  - Hero Movement may be split before, between, and after Actions. A hero may change facing
+    once per activation, including across Dash movement and during a zero-square segment.
   - Ranged and proximity ranges use Chebyshev distance.
   - Walls and rubble block movement and LOS. Water blocks movement but not LOS.
   - Closed doors block movement and LOS; open or destroyed doors block neither.
@@ -38,8 +39,15 @@ V1 deliberately excludes saved games, persistence, undo, phone-specific pan/zoom
   - Deploy them with chosen facing on `@` or any empty passable adjacent square.
   - Draw three noise results without replacement. In two-player mode, use a pass-device cover while the Skaven player privately sees each result and chooses an empty `S` square. In solo mode, the AI does this without exposing identities.
 - Hero turns:
-  - Add 3 Command at the start of every Hero turn; unused Command carries forward without a cap.
-  - Let the Hero player choose activation order. Each living, non-exited hero activates once with 4 Actions.
+  - Reset the shared pool to 2 Command at the start of every Hero turn; unused Command from
+    the prior round is discarded.
+  - Let the Hero player choose activation order. Each living, non-exited hero activates once
+    with one splittable Movement and 2 Actions.
+  - Dash costs 1 Action, adds the hero's Move to its remaining Movement, and is limited to
+    once per activation.
+  - Push costs 1 Command and grants the active hero 1 Action, once per activation. React costs
+    2 Command during the Skaven turn and grants one immediate 1-Action action after an enemy
+    completes Movement; it cannot grant Dash, Guard, or a mission action.
   - Enforce Move, Fight, Interact, Guard, nest destruction, doors, and all six heroes’ special abilities.
   - Roll dice in the application, display every result, and pause for optional rerolls, bonus attacks, or bonus movement.
   - Track once-per-activation, once-per-round, and once-per-mission usage explicitly.
@@ -47,7 +55,8 @@ V1 deliberately excludes saved games, persistence, undo, phone-specific pan/zoom
 - Skaven turns:
   - In two-player mode, the Skaven player chooses optional reveals, activation order, movement, facing, targets, and optional attacks.
   - A revealed result places its models on the token square and then the nearest empty reachable passable squares by movement distance; the Skaven controller chooses among equal candidates. “Nothing” removes the token.
-  - Activate every revealed Skaven once: move up to its allowance, change facing at most once, then optionally fight.
+  - Activate every revealed Skaven once with one Movement and 1 Action. Fight is the ordinary
+    action; a Clanrat may use Door instead, while a Rat Ogor may Smash a door during Movement.
   - Move each remaining hidden noise token five steps where legal along a shortest route toward a nearest hero, truncating before the first square in any hero’s LOS or when blocked.
   - Draw and place two new noise results after movement and activations. Noise cannot stack in v1; draws are consumed and lost when every spawn square is occupied.
   - A noise token placed or exposed in hero LOS reveals immediately. Models revealed during the end-of-turn replenishment cannot activate until the next Skaven turn.
@@ -92,7 +101,9 @@ V1 deliberately excludes saved games, persistence, undo, phone-specific pan/zoom
 
 - Write failing tests before each rules slice, covering:
   - Map parsing, exit insertion, feature counts, deployment, terrain, occupancy, pathfinding, strict-corner LOS, range, facing, and front arcs.
-  - Legal and illegal action costs, activation order, Guard interruption, doors, nest destruction, Command accumulation, and phase/round transitions.
+  - Legal and illegal action costs, split Movement, Dash and Push limits, activation order,
+    Guard interruption, doors, nest destruction, Command reset and React timing, and
+    phase/round transitions.
   - Fight outcomes, wounds/death, every hero and Skaven ability, reroll timing, Ward, charge placement/detonation, and Rat Ogor damage.
   - Noise bag depletion, private identity projection, spawn loss, nearest-square group placement, forced/optional reveal, LOS avoidance, and replenishment timing.
   - Every victory/loss condition for rosters of 1 through 5 heroes.

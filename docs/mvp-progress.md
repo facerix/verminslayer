@@ -1,6 +1,6 @@
 # MVP Progress
 
-Last updated: 2026-09-08
+Last updated: 2026-09-13
 
 This is the handoff log for [`mvp-plan.md`](mvp-plan.md). Update it when a reviewable
 slice starts or finishes so a future turn can resume without reconstructing project state
@@ -8,19 +8,19 @@ from Git history.
 
 ## Current status
 
-The fourth reviewable slice, **Hero activation and movement**, is complete in the working
-tree. The engine now enforces chosen activation order, four Actions per eligible hero,
-orthogonal movement and facing, dynamic doors, confirmation boundaries, and the transition
-to the first Skaven turn. The responsive Canvas exposes legal targets and current activation
-state without taking ownership of rules.
+The fifth reviewable slice, **Revealed Skaven and core combat**, and the cross-slice
+**action-economy revision** are complete in the working tree. Hero activations now enforce one
+splittable Movement plus two Actions, with once-per-activation Dash and Push. Revealed groups
+become stable Skaven models, and active heroes can resolve adjacent Fights with public dice,
+wounds, and model removal.
 
 | Slice | Status | Outcome |
 | --- | --- | --- |
 | 1. Map foundation and board preview | Complete | Validated The Nest map and responsive Canvas rendering |
 | 2. Game setup and hero deployment | Complete | Mode/roster selection, immutable initial state, legal Canvas deployment, and public projections |
 | 3. Initial noise setup and privacy | Complete | Private draw/placement, solo setup AI, face-down tokens, LOS reveals, and Hero Turn 1 handoff |
-| 4. Hero activation and movement | Complete | Activation order, Action spending, legal paths, facing, doors, and phase completion |
-| 5. Revealed Skaven and core combat | Proposed next | Group placement, Fight actions, dice, wounds, and death |
+| 4. Hero activation and movement | Complete | Split Movement, two Actions, Dash, Push, legal paths, facing, doors, and phase completion |
+| 5. Revealed Skaven and core combat | Complete | Group placement, Fight actions, dice, wounds, and death |
 | 6+. Rules-enforced play | Not started | Guard, abilities, Skaven AI, noise movement, objectives, and mission resolution |
 
 ## Completed in slice 1
@@ -97,23 +97,27 @@ state without taking ownership of rules.
   description.
 - Rendered face-down noise tokens and legal spawn highlights on the Canvas, recorded
   immediate LOS reveals publicly, and consumed draws when every spawn is occupied.
-- Transitioned the immutable engine to Round 1, Hero phase, with 3 Command after all three
+- Transitioned the immutable engine to Round 1, Hero phase, with 2 Command after all three
   setup draws resolve.
 - Removed the brittle exact-door-count invariant after the map gained a recent additional
   door; nests, spawns, deployment, and exit remain validated gameplay invariants.
 
 ## Completed in slice 4
 
-- Added immutable Hero-turn state for the active hero, remaining Actions, activated heroes,
-  and exited heroes, with eligibility restricted to living, deployed, non-exited models.
+- Added immutable Hero-turn state for the active hero, remaining Movement and Actions,
+  facing-change availability, Dash/Push usage, activated heroes, and exited heroes, with
+  eligibility restricted to living, deployed, non-exited models.
 - Added explicit commands and typed rule failures for starting and ending activations,
   moving, changing facing, interacting with doors, and ending the Hero phase.
 - Added deterministic orthogonal breadth-first pathfinding in a separate rules module. It
   accounts for impassable terrain, the locked exit, closed doors, heroes, and both concealed
   and revealed noise, plus intact nests for heroes while leaving nests passable to Skaven,
   and retains the submitted path for one-square-at-a-time effects.
-- Enforced the printed Move allowance, one final facing choice per Move, and a legal
-  zero-square Move that still spends 1 Action.
+- Enforced one splittable Movement equal to the printed Move allowance, one facing change per
+  activation, and a legal zero-square facing change without spending an Action.
+- Reduced a hero activation to 2 Actions, added once-per-activation Dash for one additional
+  printed Move allowance, and added once-per-activation Push for 1 shared Command and +1 Action.
+- Reset the starting shared Command reserve from 3 to 2 instead of accumulating it.
 - Re-evaluated concealed noise after every movement step and immediately after a door opens,
   preserving private identities until an actual reveal event.
 - Added adjacent door open/close interactions, prevented an occupied doorway from closing,
@@ -123,50 +127,65 @@ state without taking ownership of rules.
 - Added a phase-oriented Hero-turn UI module, Canvas legal-target selection, active/finished
   hero styling, dynamic open-door rendering, semantic action controls, live announcements,
   and explicit confirmation dialogs for unused Actions and phase completion.
+- Bumped the production and development service-worker cache versions so existing offline
+  clients fetch the revised rules engine and controls.
 - Transitioned to Skaven Turn 1 only after every eligible hero has completed an activation.
 - Cached the new compiled pathfinding and Hero-turn modules for offline use.
 
+## Completed in slice 5
+
+- Added immutable Skaven model state with stable IDs, definition references, positions,
+  facing, remaining Wounds, and a monotonic ID sequence that does not reuse defeated IDs.
+- Converted revealed noise into an interrupting placement queue. The first model occupies
+  the token square and each later model uses the nearest reachable empty distance tier, with
+  every equal-distance choice exposed to the controller in two-player mode and resolved with
+  injected randomness in solo mode.
+- Accounted for walls, rubble, water, closed doors, the locked exit, heroes, Skaven, and
+  other noise during placement while allowing Skaven to occupy intact nests.
+- Added adjacent hero Fight actions through a separate opposed-roll module. Every printed
+  Fight die uses the injected random source; highest dice determine a hero win, Skaven win,
+  or no-effect tie.
+- Applied one Wound to the loser, removed defeated Skaven, removed defeated heroes from the
+  board, and ended a defeated active hero's activation safely.
+- Exposed individual Skaven, legal Fight targets, pending revealed groups, and an immutable
+  full combat log through public projections without exposing concealed noise identities.
+- Rendered Skaven discs with facing and Wounds, highlighted placement and Fight targets,
+  added semantic placement/Fight controls, retained visible dice history, and announced
+  rolls and outcomes through the live region.
+- Split nearest-group placement and opposed dice into focused rules modules and cached both
+  compiled modules for offline use.
+
 ## Verification baseline
 
-At the end of slice 4:
+At the end of slice 5 plus the action-economy revision:
 
 - `pnpm format` passed.
 - `pnpm lint` passed with zero warnings and errors.
 - `pnpm typecheck` passed.
-- `pnpm test` passed all 81 tests.
+- `pnpm test` passed all 98 tests.
 - `pnpm build` completed successfully.
-- A fresh solo desktop flow deployed Gotrek, privately placed all three initial noise tokens,
-  activated him, executed Canvas-selected movement with a facing change, canceled and then
-  accepted the early-activation confirmation, confirmed phase completion, and reached
-  Skaven Turn 1.
-- A 700 × 900 tablet flow stacked the board above reachable controls without horizontal
-  overflow; its document and body scroll widths both matched the 700-pixel viewport.
-- The application produced no browser console errors.
+- A fresh solo desktop flow reached Hero Turn 1 with 2 Command and verified two Actions,
+  split free Movement, Dash, Push, and the one-facing-change limit in the rendered controls.
+- A 700 × 900 tablet flow had no horizontal overflow; its document and body scroll widths
+  both matched the 700-pixel viewport.
+- The application produced no browser console errors. The previously recorded multiple
+  service-worker warning remains.
 
 ## Known follow-up
 
-- The development browser reported `Multiple service workers detected`. This was a
-  warning rather than an error and was not changed during the map slice. Inspect the
-  service-worker lifecycle when that work is in scope.
+- The development browser still reports `Multiple service workers detected`. This is a
+  warning rather than an error; inspect the service-worker lifecycle when that work is in
+  scope.
 - The existing development service worker can serve one stale cached response before its
-  background refresh completes when files change without a cache-version bump. Manual
-  verification used a fresh local origin; revisit development cache strategy with the
-  service-worker lifecycle work above.
+  background refresh completes when files change without a cache-version bump. This revision
+  bumps both cache versions; revisit the development cache strategy with the service-worker
+  lifecycle work above.
 
 ## Proposed next slice
 
-Implement revealed Skaven placement and core combat:
-
-1. Add immutable Skaven model state with stable IDs, printed stats, positions, facing, and
-   Wounds.
-2. Resolve a revealed noise result into its models on the token square and nearest empty,
-   reachable passable squares, with explicit tie choices where required.
-3. Add adjacent Fight actions for the active hero, injected d6 rolls, highest-die comparison,
-   ties, wounds, and death.
-4. Expose legal targets and every roll/result through public projections and semantic UI,
-   with no concealed identity leakage.
-5. Add transaction and integration tests for crowded group placement, illegal targets,
-   ties, hero wins, Skaven wins, and model removal.
-
-Keep Guard, bonus/reroll abilities, Skaven activations, general noise movement, nest
-destruction, and mission victory for later slices.
+Implement complete Skaven activations and turn progression: controller/AI activation order,
+movement and facing, optional Skaven-initiated Fights, hidden-noise movement, two replacement
+draws, the 2-Command Hero-turn reset, and the transition into the next Hero turn. This slice
+must include the 2-Command React interruption after Skaven Movement. Keep Guard,
+bonus/reroll abilities, nest destruction, and mission victory as separately reviewable
+follow-ups unless they are required to make an interruption or transition rules-correct.

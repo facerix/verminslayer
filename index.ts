@@ -20,7 +20,7 @@ const session = new GameSession(THE_NEST, browserRandomSource);
 const gameModules: readonly GameModule[] = Object.freeze([
   new SetupGameModule({ session, board, setup }),
   new InitialNoiseGameModule({ session, board, setup, randomSource: browserRandomSource }),
-  new HeroTurnGameModule({ session, board, setup }),
+  new HeroTurnGameModule({ session, board, setup, randomSource: browserRandomSource }),
 ]);
 const delegateGameEvent = createGameEventDelegate(gameModules);
 const gameEventTypes = new Set(gameModules.flatMap(module => module.eventTypes));

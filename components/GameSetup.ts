@@ -1,5 +1,5 @@
 import { h } from '/src/domUtils.js';
-import { ALL_HERO_IDS, HERO_DEFINITIONS } from '/src/game/entities.js';
+import { ALL_HERO_IDS, HERO_DEFINITIONS, SKAVEN_DEFINITIONS } from '/src/game/entities.js';
 import type { HeroId } from '/src/game/entities.js';
 import type {
   Facing,
@@ -214,6 +214,14 @@ const STYLES = `
     font-size: 0.78rem;
   }
 
+  .combat-log {
+    display: grid;
+    gap: 0.45rem;
+    padding-left: 1.25rem;
+    color: var(--muted-color, #b9aa98);
+    font-size: 0.82rem;
+  }
+
   button:disabled {
     cursor: not-allowed;
     opacity: 0.45;
@@ -376,7 +384,20 @@ export class GameSetup extends HTMLElement {
     const door = reversedEvents.find(
       event => event.type === 'door-opened' || event.type === 'door-closed'
     );
-    if (reveal?.type === 'noise-revealed') {
+    const fight = reversedEvents.find(event => event.type === 'fight-rolled');
+    const placement = reversedEvents.find(event => event.type === 'skaven-placed');
+    if (fight?.type === 'fight-rolled') {
+      const heroName = HERO_DEFINITIONS[fight.heroId].name;
+      const outcome =
+        fight.outcome === 'tie'
+          ? 'The Fight was tied.'
+          : fight.outcome === 'hero-won'
+            ? `${heroName} won the Fight.`
+            : 'The Skaven won the Fight.';
+      this.#announcement = `${heroName} rolled ${fight.heroRolls.join(', ')}. The Skaven rolled ${fight.skavenRolls.join(', ')}. ${outcome}`;
+    } else if (placement?.type === 'skaven-placed') {
+      this.#announcement = `${SKAVEN_DEFINITIONS[placement.definitionId].name} placed at row ${placement.position.row + 1}, column ${placement.position.column + 1}, facing ${placement.facing}.`;
+    } else if (reveal?.type === 'noise-revealed') {
       this.#announcement = `${NOISE_RESULT_NAMES[reveal.resultId]} revealed at row ${reveal.position.row + 1}, column ${reveal.position.column + 1}.`;
     } else if (door?.type === 'door-opened') {
       this.#announcement = `Door opened at row ${door.position.row + 1}, column ${door.position.column + 1}.`;
@@ -398,7 +419,12 @@ export class GameSetup extends HTMLElement {
     } else if (latest?.type === 'noise-draw-consumed') {
       this.#announcement = 'The noise draw was consumed because no spawn was available.';
     } else if (latest?.type === 'hero-activation-started') {
-      this.#announcement = `${HERO_DEFINITIONS[latest.heroId].name} begins an activation with ${latest.actions} Actions.`;
+      this.#announcement = `${HERO_DEFINITIONS[latest.heroId].name} begins an activation with ${latest.movement} Movement and ${latest.actions} Actions.`;
+    } else if (latest?.type === 'movement-spent') {
+      const spaces = `${String(latest.spaces)} space${latest.spaces === 1 ? '' : 's'}`;
+      this.#announcement = `${HERO_DEFINITIONS[latest.heroId].name} moved ${spaces}; ${latest.movementRemaining} Movement remains.`;
+    } else if (latest?.type === 'hero-pushed') {
+      this.#announcement = `${HERO_DEFINITIONS[latest.heroId].name} was Pushed and gains 1 Action; ${latest.commandRemaining} Command remains.`;
     } else if (latest?.type === 'action-spent') {
       this.#announcement = `${HERO_DEFINITIONS[latest.heroId].name} spent 1 Action to ${latest.action}; ${latest.actionsRemaining} Actions remain.`;
     } else if (latest?.type === 'hero-activation-ended') {
@@ -598,6 +624,38 @@ export class GameSetup extends HTMLElement {
   }
 
   #renderHeroTurn(): HTMLElement {
+    if (this.#view?.revealedNoise[0]) {
+      const noise = this.#view.revealedNoise[0];
+      const definitionId = noise.remainingModels[0];
+      if (!definitionId) throw new Error('Revealed noise must contain a model to place');
+      const facingSelect = h('select', { id: 'skaven-facing', name: 'skaven-facing' });
+      for (const facing of ['north', 'east', 'south', 'west'] as const) {
+        facingSelect.append(h('option', { value: facing, textContent: facingLabel(facing) }));
+      }
+      const chooseSquare = h('button', {
+        type: 'button',
+        textContent: `Place ${SKAVEN_DEFINITIONS[definitionId].name}`,
+      });
+      chooseSquare.addEventListener('click', () =>
+        this.#dispatchUiEvent('skaven-placement-requested', facingSelect.value as Facing)
+      );
+      return h('div', { className: 'activation-card' }, [
+        h('div', {}, [
+          h('p', { className: 'eyebrow', textContent: 'Revealed Skaven' }),
+          h('h2', { textContent: NOISE_RESULT_NAMES[noise.resultId] }),
+          h('p', {
+            className: 'help',
+            textContent:
+              'Place each model in order. The token square is first; after that, the board highlights every tied nearest legal square.',
+          }),
+        ]),
+        h('div', { className: 'action-grid' }, [
+          h('label', {}, [h('span', { textContent: 'Facing' }), facingSelect]),
+          chooseSquare,
+        ]),
+      ]);
+    }
+
     if (this.#view?.phase === 'skaven') {
       return h('div', { className: 'complete' }, [
         h('div', {}, [
@@ -608,6 +666,7 @@ export class GameSetup extends HTMLElement {
               'Every eligible hero has activated. Skaven activation and noise movement arrive in the next reviewable slice.',
           }),
         ]),
+        this.#renderCombatLog(),
       ]);
     }
 
@@ -629,6 +688,15 @@ export class GameSetup extends HTMLElement {
                 : String(this.#view?.actionsRemaining ?? 0),
           }),
         ]),
+        h('div', {}, [
+          h('dt', { textContent: 'Movement' }),
+          h('dd', {
+            textContent:
+              this.#view?.movementRemaining === null
+                ? '—'
+                : String(this.#view?.movementRemaining ?? 0),
+          }),
+        ]),
       ]),
     ]);
 
@@ -639,7 +707,10 @@ export class GameSetup extends HTMLElement {
       if (this.#moveSelection?.stage === 'facing') {
         const { destination } = this.#moveSelection;
         const facingSelect = h('select', { id: 'move-facing', name: 'move-facing' });
-        for (const facing of ['north', 'east', 'south', 'west'] as const) {
+        const facings = this.#view?.facingChangeAvailable
+          ? (['north', 'east', 'south', 'west'] as const)
+          : ([activeHero.facing] as const);
+        for (const facing of facings) {
           facingSelect.append(
             h('option', {
               value: facing,
@@ -650,7 +721,7 @@ export class GameSetup extends HTMLElement {
         }
         const completeMove = h('button', {
           type: 'button',
-          textContent: 'Complete move · 1 Action',
+          textContent: 'Complete Movement',
         });
         completeMove.addEventListener('click', () =>
           this.#dispatchUiEvent('hero-move-facing-selected', facingSelect.value as Facing)
@@ -661,7 +732,9 @@ export class GameSetup extends HTMLElement {
           h('h3', { textContent: HERO_DEFINITIONS[activeHero.id].name }),
           h('p', {
             className: 'help',
-            textContent: `Destination: row ${destination.row + 1}, column ${destination.column + 1}. Choose the hero’s final facing to complete the Move.`,
+            textContent: this.#view?.facingChangeAvailable
+              ? `Destination: row ${destination.row + 1}, column ${destination.column + 1}. Choose the hero’s facing to complete this part of their Movement.`
+              : `Destination: row ${destination.row + 1}, column ${destination.column + 1}. This hero has already changed facing this activation.`,
           }),
           h('div', { className: 'action-grid' }, [
             h('label', {}, [h('span', { textContent: 'Final facing' }), facingSelect]),
@@ -674,8 +747,10 @@ export class GameSetup extends HTMLElement {
       const choosingDestination = this.#moveSelection?.stage === 'destination';
       const move = h('button', {
         type: 'button',
-        textContent: choosingDestination ? 'Choosing destination…' : 'Move · 1 Action',
-        disabled: choosingDestination || (this.#view?.actionsRemaining ?? 0) < 1,
+        textContent: choosingDestination
+          ? 'Choosing destination…'
+          : `Movement · ${String(this.#view?.movementRemaining ?? 0)} left`,
+        disabled: choosingDestination || (this.#view?.legalMovePaths.length ?? 0) === 0,
       });
       move.addEventListener('click', () => this.#dispatchUiEvent('hero-move-requested'));
       const interact = h('button', {
@@ -686,6 +761,30 @@ export class GameSetup extends HTMLElement {
           (this.#view?.legalDoorInteractions.length ?? 0) === 0,
       });
       interact.addEventListener('click', () => this.#dispatchUiEvent('hero-door-requested'));
+      const fight = h('button', {
+        type: 'button',
+        textContent: 'Fight · 1 Action',
+        disabled:
+          (this.#view?.actionsRemaining ?? 0) < 1 ||
+          (this.#view?.legalFightTargetIds.length ?? 0) === 0,
+      });
+      fight.addEventListener('click', () => this.#dispatchUiEvent('hero-fight-requested'));
+      const dash = h('button', {
+        type: 'button',
+        textContent: this.#view?.dashUsed ? 'Dash used' : 'Dash · 1 Action',
+        disabled: this.#view?.dashUsed || (this.#view?.actionsRemaining ?? 0) < 1,
+      });
+      dash.addEventListener('click', () =>
+        this.#dispatchCommand({ type: 'dash-hero', heroId: activeHero.id })
+      );
+      const push = h('button', {
+        type: 'button',
+        textContent: this.#view?.pushUsed ? 'Push used' : 'Push · 1 Command',
+        disabled: this.#view?.pushUsed || (this.#view?.command ?? 0) < 1,
+      });
+      push.addEventListener('click', () =>
+        this.#dispatchCommand({ type: 'push-hero', heroId: activeHero.id })
+      );
       const end = h('button', { type: 'button', textContent: 'End activation' });
       end.addEventListener('click', () => {
         const command: GameCommand = {
@@ -709,11 +808,15 @@ export class GameSetup extends HTMLElement {
         h('p', {
           className: 'help',
           textContent: choosingDestination
-            ? 'Select a highlighted destination on the board. The current square is a legal zero-square Move.'
-            : 'Select Move, choose a highlighted destination, then choose the hero’s final facing.',
+            ? 'Select a highlighted destination on the board. The current square is legal while a facing change remains.'
+            : 'Movement is free and may be split before, between, and after Actions. Dash adds the hero’s Move again.',
         }),
-        h('div', { className: 'action-grid' }, [move, choosingDestination ? cancelMove : interact]),
-        ...(choosingDestination ? [] : [end]),
+        h(
+          'div',
+          { className: 'action-grid' },
+          choosingDestination ? [move, cancelMove] : [move, fight, interact, dash, push]
+        ),
+        ...(choosingDestination ? [] : [this.#renderCombatLog(), end]),
       ]);
     }
 
@@ -762,8 +865,33 @@ export class GameSetup extends HTMLElement {
           : 'Choose the next living, non-exited hero to activate.',
       }),
       roster,
+      this.#renderCombatLog(),
       endPhase,
     ]);
+  }
+
+  #renderCombatLog(): HTMLElement {
+    const entries = this.#view?.combatLog ?? [];
+    if (entries.length === 0) {
+      return h('p', { className: 'help', textContent: 'No Fights resolved yet.' });
+    }
+    return h(
+      'ol',
+      { className: 'combat-log', ariaLabel: 'Fight results' },
+      entries.map(result => {
+        const heroHigh = Math.max(...result.heroRolls);
+        const skavenHigh = Math.max(...result.skavenRolls);
+        const outcome =
+          result.outcome === 'tie'
+            ? 'tie; no Wound'
+            : result.outcome === 'hero-won'
+              ? 'hero wins; Skaven suffers 1 Wound'
+              : 'Skaven wins; hero suffers 1 Wound';
+        return h('li', {
+          textContent: `${HERO_DEFINITIONS[result.heroId].name} [${result.heroRolls.join(', ')}], high ${heroHigh}; ${SKAVEN_DEFINITIONS[result.skavenDefinitionId].name} [${result.skavenRolls.join(', ')}], high ${skavenHigh}: ${outcome}.`,
+        });
+      })
+    );
   }
 
   #render() {

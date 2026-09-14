@@ -2,6 +2,7 @@ import {
   createInitialGameState,
   getLegalDeploymentPositions,
   getLegalNoiseSpawnPositions,
+  getLegalSkavenPlacementPositions,
   projectHeroView,
   projectSkavenView,
   resolveCommand,
@@ -47,6 +48,10 @@ export class GameSession {
 
   get legalNoiseSpawnPositions(): readonly Position[] {
     return getLegalNoiseSpawnPositions(this.#state, this.#mission);
+  }
+
+  legalSkavenPlacementPositions(noiseId: string): readonly Position[] {
+    return getLegalSkavenPlacementPositions(this.#state, this.#mission, noiseId);
   }
 
   dispatch(command: GameCommand): readonly GameEvent[] {

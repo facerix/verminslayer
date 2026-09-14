@@ -2,12 +2,19 @@ import type {
   BoardDoorPresentation,
   BoardHeroPresentation,
   BoardNoisePresentation,
+  BoardSkavenPresentation,
 } from '/src/canvas/boardRenderer.js';
 import { HERO_DEFINITIONS } from '/src/game/entities.js';
 import type { HeroId } from '/src/game/entities.js';
 import type { GameModule } from '/src/game/gameModule.js';
 import type { GameSession } from '/src/game/gameSession.js';
-import type { Facing, GameCommand, GameEvent, HeroGameView } from '/src/game/gameState.js';
+import type {
+  Facing,
+  GameCommand,
+  GameEvent,
+  HeroGameView,
+  RandomSource,
+} from '/src/game/gameState.js';
 import type { Position } from '/src/game/map.js';
 import type { NoiseResultId } from '/src/game/missionDefinition.js';
 import { RulesError } from '/src/game/rulesError.js';
@@ -27,15 +34,17 @@ interface BoardView {
   selectedSquare: Position | null;
   noiseTokens: readonly BoardNoisePresentation[];
   doors: readonly BoardDoorPresentation[];
+  skaven: readonly BoardSkavenPresentation[];
 }
 
 interface HeroTurnGameModuleOptions {
   readonly session: GameSession;
   readonly setup: HeroTurnView;
   readonly board: BoardView;
+  readonly randomSource: RandomSource;
 }
 
-type SelectionMode = 'move' | 'door' | null;
+type SelectionMode = 'move' | 'door' | 'fight' | 'skaven-placement' | null;
 
 const HERO_LABELS: Readonly<Record<HeroId, string>> = Object.freeze({
   gotrek: 'Go',
@@ -65,7 +74,11 @@ const NOISE_NAMES: Readonly<Record<NoiseResultId, string>> = Object.freeze({
 const HERO_COMMAND_TYPES = new Set<GameCommand['type']>([
   'start-hero-activation',
   'move-hero',
+  'dash-hero',
+  'push-hero',
   'interact-door',
+  'fight-skaven',
+  'place-revealed-skaven',
   'end-hero-activation',
   'end-hero-phase',
 ]);
@@ -78,18 +91,23 @@ export class HeroTurnGameModule implements GameModule {
     'hero-move-facing-selected',
     'hero-move-cancelled',
     'hero-door-requested',
+    'hero-fight-requested',
+    'skaven-placement-requested',
   ]);
   readonly #session: GameSession;
   readonly #setup: HeroTurnView;
   readonly #board: BoardView;
+  readonly #randomSource: RandomSource;
   #selectionMode: SelectionMode = null;
   #pendingMovePath: readonly Position[] | null = null;
   #pendingMoveDestination: Position | null = null;
+  #placementFacing: Facing = 'north';
 
-  constructor({ session, setup, board }: HeroTurnGameModuleOptions) {
+  constructor({ session, setup, board, randomSource }: HeroTurnGameModuleOptions) {
     this.#session = session;
     this.#setup = setup;
     this.#board = board;
+    this.#randomSource = randomSource;
   }
 
   render(): void {
@@ -113,6 +131,24 @@ export class HeroTurnGameModule implements GameModule {
         },
       ];
     });
+    this.#board.skaven = view.skaven.map(skaven => ({
+      id: skaven.id,
+      label:
+        skaven.definitionId === 'clanrat'
+          ? 'CR'
+          : skaven.definitionId === 'gutter-runner'
+            ? 'GR'
+            : 'RO',
+      accessibleLabel:
+        skaven.definitionId === 'clanrat'
+          ? 'Clanrat'
+          : skaven.definitionId === 'gutter-runner'
+            ? 'Gutter Runner'
+            : 'Rat Ogor',
+      position: skaven.position,
+      facing: skaven.facing,
+      woundsRemaining: skaven.woundsRemaining,
+    }));
     this.#board.noiseTokens = [
       ...view.noiseTokens.map(noise => ({ position: noise.position })),
       ...view.revealedNoise.map(noise => ({
@@ -135,6 +171,10 @@ export class HeroTurnGameModule implements GameModule {
     if (event.type === 'hero-move-facing-selected') return this.#handleMoveFacing(event);
     if (event.type === 'hero-move-cancelled') return this.#handleMoveCancel();
     if (event.type === 'hero-door-requested') return this.#handleDoorRequest();
+    if (event.type === 'hero-fight-requested') return this.#handleFightRequest();
+    if (event.type === 'skaven-placement-requested') {
+      return this.#handleSkavenPlacementRequest(event);
+    }
     if (event.type === 'board-square-selected') return this.#handleBoardSelection(event);
     return false;
   }
@@ -143,7 +183,7 @@ export class HeroTurnGameModule implements GameModule {
     const command = (event as CustomEvent<GameCommand>).detail;
     if (!HERO_COMMAND_TYPES.has(command.type)) return false;
     try {
-      const events = this.#session.dispatch(command);
+      const events = this.#dispatch(command);
       this.#clearSelection();
       this.#setup.announce(events);
       this.render();
@@ -175,7 +215,7 @@ export class HeroTurnGameModule implements GameModule {
       return false;
     }
     try {
-      const events = this.#session.dispatch({
+      const events = this.#dispatch({
         type: 'move-hero',
         heroId: view.activeHeroId,
         path: this.#pendingMovePath,
@@ -207,9 +247,31 @@ export class HeroTurnGameModule implements GameModule {
     return true;
   }
 
+  #handleFightRequest(): boolean {
+    const view = this.#session.heroView;
+    if (view.phase !== 'hero' || !view.activeHeroId || view.legalFightTargetIds.length === 0) {
+      return false;
+    }
+    this.#selectionMode = 'fight';
+    this.#setup.clearMoveSelection();
+    this.#renderLegalSquares(view);
+    return true;
+  }
+
+  #handleSkavenPlacementRequest(event: Event): boolean {
+    const view = this.#session.heroView;
+    if (view.revealedNoise.length === 0) return false;
+    this.#placementFacing = (event as CustomEvent<Facing>).detail;
+    this.#selectionMode = 'skaven-placement';
+    this.#setup.clearMoveSelection();
+    this.#renderLegalSquares(view);
+    return true;
+  }
+
   #handleBoardSelection(event: Event): boolean {
     const view = this.#session.heroView;
-    if (!this.#selectionMode || !view.activeHeroId) return false;
+    if (!this.#selectionMode) return false;
+    if (this.#selectionMode !== 'skaven-placement' && !view.activeHeroId) return false;
     const position = (event as CustomEvent<Position>).detail;
     try {
       let events: readonly GameEvent[];
@@ -226,11 +288,33 @@ export class HeroTurnGameModule implements GameModule {
         this.#renderLegalSquares(view);
         this.#setup.chooseMoveFacing(path.destination);
         return true;
-      } else {
-        events = this.#session.dispatch({
+      } else if (this.#selectionMode === 'door') {
+        events = this.#dispatch({
           type: 'interact-door',
-          heroId: view.activeHeroId,
+          heroId: view.activeHeroId!,
           position,
+        });
+      } else if (this.#selectionMode === 'fight') {
+        if (!view.activeHeroId) return false;
+        const target = view.skaven.find(skaven => this.#samePosition(skaven.position, position));
+        if (!target || !view.legalFightTargetIds.includes(target.id)) {
+          throw new RulesError('UNKNOWN_FIGHT_TARGET', 'Choose a highlighted Skaven model');
+        }
+        events = this.#dispatch({
+          type: 'fight-skaven',
+          heroId: view.activeHeroId,
+          skavenId: target.id,
+        });
+      } else {
+        const noise = view.revealedNoise[0];
+        if (!noise) {
+          throw new RulesError('UNKNOWN_REVEALED_NOISE', 'Choose a revealed noise group');
+        }
+        events = this.#dispatch({
+          type: 'place-revealed-skaven',
+          noiseId: noise.id,
+          position,
+          facing: this.#placementFacing,
         });
       }
       this.#clearSelection();
@@ -248,8 +332,70 @@ export class HeroTurnGameModule implements GameModule {
         ? view.legalMovePaths.map(path => path.destination)
         : this.#selectionMode === 'door'
           ? view.legalDoorInteractions
-          : [];
+          : this.#selectionMode === 'fight'
+            ? view.skaven
+                .filter(skaven => view.legalFightTargetIds.includes(skaven.id))
+                .map(skaven => skaven.position)
+            : this.#selectionMode === 'skaven-placement' && view.revealedNoise[0]
+              ? this.#session.legalSkavenPlacementPositions(view.revealedNoise[0].id)
+              : [];
     this.#board.selectedSquare = this.#pendingMoveDestination;
+  }
+
+  #dispatch(command: GameCommand): readonly GameEvent[] {
+    const events = [...this.#session.dispatch(command)];
+    if (this.#session.heroView.mode !== 'solo') return Object.freeze(events);
+
+    while (this.#session.heroView.revealedNoise[0]) {
+      const noise = this.#session.heroView.revealedNoise[0];
+      const positions = this.#session.legalSkavenPlacementPositions(noise.id);
+      const randomValue = this.#randomSource.next();
+      if (!Number.isFinite(randomValue) || randomValue < 0 || randomValue >= 1) {
+        throw new RulesError(
+          'INVALID_RANDOM_VALUE',
+          'Random values must be finite numbers from 0 up to 1'
+        );
+      }
+      const position = positions[Math.floor(randomValue * positions.length)];
+      if (!position) {
+        throw new RulesError(
+          'INVALID_SKAVEN_PLACEMENT',
+          'No legal square is available for the revealed Skaven group'
+        );
+      }
+      events.push(
+        ...this.#session.dispatch({
+          type: 'place-revealed-skaven',
+          noiseId: noise.id,
+          position,
+          facing: this.#facingTowardNearestHero(position),
+        })
+      );
+    }
+    return Object.freeze(events);
+  }
+
+  #facingTowardNearestHero(position: Position): Facing {
+    let target: Position | null = null;
+    let nearestDistance = Number.POSITIVE_INFINITY;
+    for (const hero of this.#session.heroView.heroes) {
+      if (!hero.position || hero.woundsRemaining <= 0) continue;
+      const distance = Math.max(
+        Math.abs(hero.position.row - position.row),
+        Math.abs(hero.position.column - position.column)
+      );
+      if (distance >= nearestDistance) continue;
+      target = hero.position;
+      nearestDistance = distance;
+    }
+    if (!target) return 'north';
+
+    const rowDelta = target.row - position.row;
+    const columnDelta = target.column - position.column;
+    if (Math.abs(rowDelta) >= Math.abs(columnDelta)) {
+      return rowDelta >= 0 ? 'south' : 'north';
+    }
+    return columnDelta >= 0 ? 'east' : 'west';
   }
 
   #samePosition(left: Position, right: Position) {

@@ -13,6 +13,7 @@ const AppCacheResources = Object.freeze({
     '/src/game/entities.js',
     '/src/game/gameModule.js',
     '/src/game/gameSession.js',
+    '/src/game/combat.js',
     '/src/game/gameState.js',
     '/src/game/lineOfSight.js',
     '/src/game/pathfinding.js',
@@ -23,6 +24,7 @@ const AppCacheResources = Object.freeze({
     '/src/game/missions/theNest.js',
     '/src/game/missions/registry.js',
     '/src/game/rulesError.js',
+    '/src/game/skavenPlacement.js',
   ],
   static: [],
 });
