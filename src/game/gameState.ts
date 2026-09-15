@@ -14,6 +14,7 @@ export type GameMode = 'solo' | 'two-player';
 export type SetupStep = 'select-roster' | 'deploy-heroes' | 'initial-noise' | 'complete';
 export type Facing = 'north' | 'east' | 'south' | 'west';
 export type GamePhase = 'setup' | 'hero' | 'skaven';
+export type SkavenTurnStep = 'activate-skaven' | 'activate-noise' | 'reinforce';
 
 export interface RandomSource {
   next(): number;
@@ -101,6 +102,12 @@ export interface GameState {
   readonly pushUsed: boolean;
   readonly activatedHeroIds: readonly HeroId[];
   readonly exitedHeroIds: readonly HeroId[];
+  readonly skavenTurnStep: SkavenTurnStep | null;
+  readonly skavenActivationIds: readonly string[];
+  readonly activatedSkavenIds: readonly string[];
+  readonly activeSkavenId: string | null;
+  readonly skavenActionsRemaining: number | null;
+  readonly skavenMovementRemaining: number | null;
 }
 
 export type GameCommand =
@@ -163,6 +170,31 @@ export type GameCommand =
     }
   | {
       readonly type: 'end-hero-phase';
+      readonly confirmed: boolean;
+    }
+  | {
+      readonly type: 'start-skaven-activation';
+      readonly skavenId: string;
+    }
+  | {
+      readonly type: 'move-skaven';
+      readonly skavenId: string;
+      readonly path: readonly Position[];
+      readonly facing: Facing;
+    }
+  | {
+      readonly type: 'fight-hero';
+      readonly skavenId: string;
+      readonly heroId: HeroId;
+    }
+  | {
+      readonly type: 'interact-door-skaven';
+      readonly skavenId: string;
+      readonly position: Position;
+    }
+  | {
+      readonly type: 'end-skaven-activation';
+      readonly skavenId: string;
       readonly confirmed: boolean;
     };
 
@@ -233,6 +265,36 @@ export type GameEvent =
   | { readonly type: 'hero-phase-ended'; readonly round: number }
   | { readonly type: 'skaven-turn-started'; readonly round: number }
   | {
+      readonly type: 'skaven-activation-started';
+      readonly skavenId: string;
+      readonly movement: number;
+      readonly actions: number;
+    }
+  | {
+      readonly type: 'skaven-moved';
+      readonly skavenId: string;
+      readonly from: Position;
+      readonly to: Position;
+    }
+  | {
+      readonly type: 'skaven-facing-changed';
+      readonly skavenId: string;
+      readonly facing: Facing;
+    }
+  | {
+      readonly type: 'skaven-movement-completed';
+      readonly skavenId: string;
+      readonly spaces: number;
+    }
+  | {
+      readonly type: 'skaven-action-spent';
+      readonly skavenId: string;
+      readonly action: 'fight' | 'interact';
+      readonly actionsRemaining: number;
+    }
+  | { readonly type: 'skaven-activation-ended'; readonly skavenId: string }
+  | { readonly type: 'revealed-skaven-activations-complete' }
+  | {
       readonly type: 'skaven-placed';
       readonly skavenId: string;
       readonly definitionId: SkavenId;
@@ -287,6 +349,15 @@ export interface HeroGameView {
   readonly pushUsed: boolean;
   readonly activatedHeroIds: readonly HeroId[];
   readonly exitedHeroIds: readonly HeroId[];
+  readonly skavenTurnStep: SkavenTurnStep | null;
+  readonly skavenActivationIds: readonly string[];
+  readonly activatedSkavenIds: readonly string[];
+  readonly activeSkavenId: string | null;
+  readonly skavenActionsRemaining: number | null;
+  readonly skavenMovementRemaining: number | null;
+  readonly legalSkavenMovePaths: readonly ReachablePath[];
+  readonly legalSkavenDoorInteractions: readonly Position[];
+  readonly legalSkavenFightTargetIds: readonly HeroId[];
   readonly legalMovePaths: readonly ReachablePath[];
   readonly legalDoorInteractions: readonly Position[];
   readonly legalFightTargetIds: readonly string[];
@@ -360,6 +431,8 @@ const freezeState = (state: GameState): GameState =>
     remainingNoiseBag: Object.freeze([...state.remainingNoiseBag]),
     activatedHeroIds: Object.freeze([...state.activatedHeroIds]),
     exitedHeroIds: Object.freeze([...state.exitedHeroIds]),
+    skavenActivationIds: Object.freeze([...state.skavenActivationIds]),
+    activatedSkavenIds: Object.freeze([...state.activatedSkavenIds]),
   });
 
 const assertMissionMatches = (state: GameState, mission: MissionDefinition) => {
@@ -431,6 +504,12 @@ export const createInitialGameState = (mission: MissionDefinition): GameState =>
     pushUsed: false,
     activatedHeroIds: [],
     exitedHeroIds: [],
+    skavenTurnStep: null,
+    skavenActivationIds: [],
+    activatedSkavenIds: [],
+    activeSkavenId: null,
+    skavenActionsRemaining: null,
+    skavenMovementRemaining: null,
   });
 
 export const getLegalDeploymentPositions = (
@@ -469,6 +548,9 @@ export const getLegalDeploymentPositions = (
 const samePosition = (left: Position, right: Position) =>
   left.row === right.row && left.column === right.column;
 
+const isAdjacent = (left: Position, right: Position) =>
+  Math.max(Math.abs(left.row - right.row), Math.abs(left.column - right.column)) === 1;
+
 const isHeroEligible = (state: GameState, hero: HeroState) =>
   hero.woundsRemaining > 0 && hero.position !== null && !state.exitedHeroIds.includes(hero.id);
 
@@ -505,6 +587,98 @@ const getMovementContext = (
     ],
     exitOpen: state.nests.every(nest => nest.status === 'destroyed'),
   };
+};
+
+const getSkavenMovementContext = (
+  state: GameState,
+  mission: MissionDefinition,
+  skaven: SkavenState
+): MovementContext => ({
+  board: mission.board,
+  start: skaven.position,
+  maximumSteps: state.skavenMovementRemaining ?? 0,
+  closedDoors: state.doors.filter(door => door.status === 'closed').map(door => door.position),
+  blockedPositions: [
+    ...state.heroes.flatMap(hero => (hero.position ? [hero.position] : [])),
+    ...state.skaven
+      .filter(candidate => candidate.id !== skaven.id)
+      .map(candidate => candidate.position),
+    ...state.concealedNoise.map(noise => noise.position),
+    ...state.revealedNoise.map(noise => noise.position),
+  ],
+  exitOpen: state.nests.every(nest => nest.status === 'destroyed'),
+});
+
+export const getLegalSkavenMovePaths = (
+  state: GameState,
+  mission: MissionDefinition
+): readonly ReachablePath[] => {
+  assertMissionMatches(state, mission);
+  if (
+    state.phase !== 'skaven' ||
+    state.skavenTurnStep !== 'activate-skaven' ||
+    !state.activeSkavenId ||
+    (state.skavenMovementRemaining ?? 0) < 1 ||
+    state.revealedNoise.length > 0
+  ) {
+    return Object.freeze([]);
+  }
+  const skaven = state.skaven.find(candidate => candidate.id === state.activeSkavenId);
+  return skaven
+    ? getReachablePaths(getSkavenMovementContext(state, mission, skaven))
+    : Object.freeze([]);
+};
+
+export const getLegalSkavenFightTargetIds = (state: GameState): readonly HeroId[] => {
+  if (
+    state.phase !== 'skaven' ||
+    state.skavenTurnStep !== 'activate-skaven' ||
+    !state.activeSkavenId ||
+    state.skavenMovementRemaining !== 0 ||
+    (state.skavenActionsRemaining ?? 0) < 1 ||
+    state.revealedNoise.length > 0
+  ) {
+    return Object.freeze([]);
+  }
+  const skaven = state.skaven.find(candidate => candidate.id === state.activeSkavenId);
+  if (!skaven) return Object.freeze([]);
+  return Object.freeze(
+    state.heroes
+      .filter(
+        hero =>
+          hero.position && hero.woundsRemaining > 0 && isAdjacent(skaven.position, hero.position)
+      )
+      .map(hero => hero.id)
+  );
+};
+
+export const getLegalSkavenDoorInteractions = (
+  state: GameState,
+  mission: MissionDefinition
+): readonly Position[] => {
+  assertMissionMatches(state, mission);
+  if (
+    state.phase !== 'skaven' ||
+    state.skavenTurnStep !== 'activate-skaven' ||
+    !state.activeSkavenId ||
+    state.skavenMovementRemaining !== 0 ||
+    (state.skavenActionsRemaining ?? 0) < 1 ||
+    state.revealedNoise.length > 0
+  ) {
+    return Object.freeze([]);
+  }
+  const skaven = state.skaven.find(candidate => candidate.id === state.activeSkavenId);
+  if (!skaven || skaven.definitionId !== 'clanrat') return Object.freeze([]);
+  return Object.freeze(
+    state.doors
+      .filter(
+        door =>
+          door.status !== 'destroyed' &&
+          (door.status === 'closed' || !isPositionOccupied(state, door.position)) &&
+          isAdjacent(skaven.position, door.position)
+      )
+      .map(door => freezePosition(door.position))
+  );
 };
 
 export const getLegalFightTargetIds = (state: GameState): readonly string[] => {
@@ -870,7 +1044,9 @@ const placeInitialNoise = (
     .map(door => door.position);
   const revealed = state.heroes.some(
     hero =>
-      hero.position && hasLineOfSight(mission.board, hero.position, command.position, closedDoors)
+      hero.position &&
+      (isAdjacent(hero.position, command.position) ||
+        hasLineOfSight(mission.board, hero.position, command.position, closedDoors))
   );
   const events: GameEvent[] = [
     Object.freeze({ type: 'noise-placed' as const, position: freezePosition(command.position) }),
@@ -946,7 +1122,8 @@ const revealVisibleNoise = (
       hero =>
         isHeroEligible(state, hero) &&
         hero.position &&
-        hasLineOfSight(mission.board, hero.position, noise.position, closedDoors)
+        (isAdjacent(hero.position, noise.position) ||
+          hasLineOfSight(mission.board, hero.position, noise.position, closedDoors))
     )
   );
   if (visible.length === 0) return { state, events: Object.freeze([]) };
@@ -1473,6 +1650,8 @@ const endHeroPhase = (
   if (!command.confirmed) {
     throw new RulesError('CONFIRMATION_REQUIRED', 'Confirm ending the Hero phase');
   }
+  const skavenActivationIds = state.skaven.map(skaven => skaven.id);
+  const skavenTurnStep = skavenActivationIds.length > 0 ? 'activate-skaven' : 'activate-noise';
   return Object.freeze({
     state: freezeState({
       ...state,
@@ -1482,11 +1661,395 @@ const endHeroPhase = (
       facingChangeAvailable: false,
       dashUsed: false,
       pushUsed: false,
+      skavenTurnStep,
+      skavenActivationIds,
+      activatedSkavenIds: [],
+      activeSkavenId: null,
+      skavenActionsRemaining: null,
+      skavenMovementRemaining: null,
     }),
     events: Object.freeze([
       Object.freeze({ type: 'hero-phase-ended' as const, round: state.round }),
       Object.freeze({ type: 'skaven-turn-started' as const, round: state.round }),
+      ...(skavenTurnStep === 'activate-noise'
+        ? [Object.freeze({ type: 'revealed-skaven-activations-complete' as const })]
+        : []),
     ]),
+  });
+};
+
+const assertSkavenActivationStep = (state: GameState) => {
+  if (
+    state.setupStep !== 'complete' ||
+    state.phase !== 'skaven' ||
+    state.skavenTurnStep !== 'activate-skaven'
+  ) {
+    throw new RulesError(
+      'NOT_SKAVEN_PHASE',
+      'This command can only be used while revealed Skaven are activating'
+    );
+  }
+};
+
+const getActiveSkaven = (state: GameState, skavenId: string): SkavenState => {
+  assertSkavenActivationStep(state);
+  if (state.revealedNoise.length > 0) {
+    throw new RulesError(
+      'SKAVEN_PLACEMENT_REQUIRED',
+      'Place every model from revealed noise before continuing the Skaven activation'
+    );
+  }
+  if (!state.activeSkavenId) {
+    throw new RulesError('NO_ACTIVE_SKAVEN', 'Choose a Skaven model to activate first');
+  }
+  if (state.activeSkavenId !== skavenId) {
+    throw new RulesError('WRONG_ACTIVE_SKAVEN', 'Only the active Skaven can act');
+  }
+  const skaven = state.skaven.find(candidate => candidate.id === skavenId);
+  if (!skaven) {
+    throw new RulesError('SKAVEN_NOT_ELIGIBLE', 'Only a living Skaven model can act');
+  }
+  return skaven;
+};
+
+const startSkavenActivation = (
+  state: GameState,
+  command: Extract<GameCommand, { type: 'start-skaven-activation' }>
+): CommandResult => {
+  assertSkavenActivationStep(state);
+  if (state.revealedNoise.length > 0) {
+    throw new RulesError(
+      'SKAVEN_PLACEMENT_REQUIRED',
+      'Place every model from revealed noise before starting an activation'
+    );
+  }
+  if (state.activeSkavenId) {
+    throw new RulesError('ACTIVATION_IN_PROGRESS', 'End the current activation first');
+  }
+  const skaven = state.skaven.find(candidate => candidate.id === command.skavenId);
+  if (!skaven || !state.skavenActivationIds.includes(skaven.id)) {
+    throw new RulesError(
+      'SKAVEN_NOT_ELIGIBLE',
+      'Choose a living Skaven that was revealed when this turn began'
+    );
+  }
+  if (state.activatedSkavenIds.includes(skaven.id)) {
+    throw new RulesError(
+      'SKAVEN_ALREADY_ACTIVATED',
+      `${SKAVEN_DEFINITIONS[skaven.definitionId].name} already activated`
+    );
+  }
+  const movement = SKAVEN_DEFINITIONS[skaven.definitionId].stats.move;
+  const actions = 1;
+  return Object.freeze({
+    state: freezeState({
+      ...state,
+      activeSkavenId: skaven.id,
+      skavenActionsRemaining: actions,
+      skavenMovementRemaining: movement,
+    }),
+    events: Object.freeze([
+      Object.freeze({
+        type: 'skaven-activation-started' as const,
+        skavenId: skaven.id,
+        movement,
+        actions,
+      }),
+    ]),
+  });
+};
+
+const moveSkaven = (
+  state: GameState,
+  command: Extract<GameCommand, { type: 'move-skaven' }>,
+  mission: MissionDefinition
+): CommandResult => {
+  const skaven = getActiveSkaven(state, command.skavenId);
+  if ((state.skavenMovementRemaining ?? 0) < 1) {
+    throw new RulesError('SKAVEN_MOVEMENT_USED', 'This Skaven already completed its Movement');
+  }
+  if (!isFacing(command.facing)) {
+    throw new RulesError('INVALID_FACING', 'Choose north, east, south, or west facing');
+  }
+  if (!isLegalMovementPath(getSkavenMovementContext(state, mission, skaven), command.path)) {
+    throw new RulesError(
+      'INVALID_MOVEMENT_PATH',
+      'Move orthogonally through passable, unoccupied squares within the Skaven’s Move allowance'
+    );
+  }
+
+  const destination = command.path.at(-1) ?? skaven.position;
+  const events: GameEvent[] = [];
+  let from = skaven.position;
+  for (const rawStep of command.path) {
+    const step = freezePosition(rawStep);
+    events.push(
+      Object.freeze({
+        type: 'skaven-moved' as const,
+        skavenId: skaven.id,
+        from: freezePosition(from),
+        to: step,
+      })
+    );
+    from = step;
+  }
+  if (skaven.facing !== command.facing) {
+    events.push(
+      Object.freeze({
+        type: 'skaven-facing-changed' as const,
+        skavenId: skaven.id,
+        facing: command.facing,
+      })
+    );
+  }
+  events.push(
+    Object.freeze({
+      type: 'skaven-movement-completed' as const,
+      skavenId: skaven.id,
+      spaces: command.path.length,
+    })
+  );
+  return Object.freeze({
+    state: freezeState({
+      ...state,
+      skaven: state.skaven.map(candidate =>
+        candidate.id === skaven.id
+          ? { ...candidate, position: destination, facing: command.facing }
+          : candidate
+      ),
+      skavenMovementRemaining: 0,
+    }),
+    events: Object.freeze(events),
+  });
+};
+
+const assertSkavenActionAvailable = (state: GameState) => {
+  if (state.skavenMovementRemaining !== 0) {
+    throw new RulesError(
+      'SKAVEN_MOVEMENT_REQUIRED',
+      'Complete this Skaven’s Movement before taking its Action'
+    );
+  }
+  if ((state.skavenActionsRemaining ?? 0) < 1) {
+    throw new RulesError(
+      'NO_SKAVEN_ACTIONS_REMAINING',
+      'The active Skaven has no Actions remaining'
+    );
+  }
+};
+
+const finishSkavenActivation = (
+  state: GameState,
+  skavenId: string
+): { readonly state: GameState; readonly events: readonly GameEvent[] } => {
+  const activatedSkavenIds = state.activatedSkavenIds.includes(skavenId)
+    ? state.activatedSkavenIds
+    : [...state.activatedSkavenIds, skavenId];
+  const everyActivated = state.skavenActivationIds.every(
+    id => activatedSkavenIds.includes(id) || !state.skaven.some(skaven => skaven.id === id)
+  );
+  return {
+    state: {
+      ...state,
+      activeSkavenId: null,
+      skavenActionsRemaining: null,
+      skavenMovementRemaining: null,
+      activatedSkavenIds,
+      skavenTurnStep: everyActivated ? 'activate-noise' : state.skavenTurnStep,
+    },
+    events: Object.freeze([
+      Object.freeze({ type: 'skaven-activation-ended' as const, skavenId }),
+      ...(everyActivated
+        ? [Object.freeze({ type: 'revealed-skaven-activations-complete' as const })]
+        : []),
+    ]),
+  };
+};
+
+const fightHero = (
+  state: GameState,
+  command: Extract<GameCommand, { type: 'fight-hero' }>,
+  randomSource: RandomSource
+): CommandResult => {
+  const skaven = getActiveSkaven(state, command.skavenId);
+  assertSkavenActionAvailable(state);
+  const hero = state.heroes.find(candidate => candidate.id === command.heroId);
+  if (!hero?.position || hero.woundsRemaining <= 0) {
+    throw new RulesError('UNKNOWN_FIGHT_TARGET', 'Choose a living hero to fight');
+  }
+  if (!isAdjacent(skaven.position, hero.position)) {
+    throw new RulesError('FIGHT_TARGET_NOT_ADJACENT', 'Fight an adjacent hero');
+  }
+
+  const { heroRolls, skavenRolls, outcome } = resolveOpposedRoll(
+    HERO_DEFINITIONS[hero.definitionId].stats.fight,
+    SKAVEN_DEFINITIONS[skaven.definitionId].stats.fight,
+    randomSource
+  );
+  const combatResult = freezeCombatResult({
+    heroId: hero.id,
+    skavenId: skaven.id,
+    skavenDefinitionId: skaven.definitionId,
+    heroRolls,
+    skavenRolls,
+    outcome,
+  });
+  const events: GameEvent[] = [Object.freeze({ type: 'fight-rolled' as const, ...combatResult })];
+  let heroes = state.heroes;
+  let skavenModels = state.skaven;
+
+  if (outcome === 'hero-won') {
+    const woundsRemaining = Math.max(0, skaven.woundsRemaining - 1);
+    events.push(
+      Object.freeze({
+        type: 'model-wounded' as const,
+        faction: 'skaven' as const,
+        modelId: skaven.id,
+        woundsRemaining,
+      })
+    );
+    skavenModels =
+      woundsRemaining === 0
+        ? state.skaven.filter(candidate => candidate.id !== skaven.id)
+        : state.skaven.map(candidate =>
+            candidate.id === skaven.id ? { ...candidate, woundsRemaining } : candidate
+          );
+    if (woundsRemaining === 0) {
+      events.push(
+        Object.freeze({
+          type: 'model-defeated' as const,
+          faction: 'skaven' as const,
+          modelId: skaven.id,
+        })
+      );
+    }
+  } else if (outcome === 'skaven-won') {
+    const woundsRemaining = Math.max(0, hero.woundsRemaining - 1);
+    events.push(
+      Object.freeze({
+        type: 'model-wounded' as const,
+        faction: 'hero' as const,
+        modelId: hero.id,
+        woundsRemaining,
+      })
+    );
+    heroes = state.heroes.map(candidate =>
+      candidate.id === hero.id
+        ? {
+            ...candidate,
+            woundsRemaining,
+            position: woundsRemaining === 0 ? null : candidate.position,
+          }
+        : candidate
+    );
+    if (woundsRemaining === 0) {
+      events.push(
+        Object.freeze({
+          type: 'model-defeated' as const,
+          faction: 'hero' as const,
+          modelId: hero.id,
+        })
+      );
+    }
+  }
+
+  const actionEvent = Object.freeze({
+    type: 'skaven-action-spent' as const,
+    skavenId: skaven.id,
+    action: 'fight' as const,
+    actionsRemaining: 0,
+  });
+  const nextState: GameState = {
+    ...state,
+    heroes,
+    skaven: skavenModels,
+    combatLog: [...state.combatLog, combatResult],
+    skavenActionsRemaining: 0,
+  };
+  if (outcome === 'hero-won' && !skavenModels.some(candidate => candidate.id === skaven.id)) {
+    const finished = finishSkavenActivation(nextState, skaven.id);
+    return Object.freeze({
+      state: freezeState(finished.state),
+      events: Object.freeze([...events, actionEvent, ...finished.events]),
+    });
+  }
+  return Object.freeze({
+    state: freezeState(nextState),
+    events: Object.freeze([...events, actionEvent]),
+  });
+};
+
+const interactDoorSkaven = (
+  state: GameState,
+  command: Extract<GameCommand, { type: 'interact-door-skaven' }>,
+  mission: MissionDefinition
+): CommandResult => {
+  const skaven = getActiveSkaven(state, command.skavenId);
+  assertSkavenActionAvailable(state);
+  if (skaven.definitionId !== 'clanrat') {
+    throw new RulesError('CLANRAT_DOOR_ONLY', 'Only a Clanrat may use a Door action');
+  }
+  const door = state.doors.find(candidate => samePosition(candidate.position, command.position));
+  if (!door || door.status === 'destroyed') {
+    throw new RulesError('INVALID_DOOR', 'Choose an intact door');
+  }
+  if (!isAdjacent(skaven.position, door.position)) {
+    throw new RulesError('DOOR_NOT_ADJACENT', 'Interact with an adjacent door');
+  }
+  const nextStatus = door.status === 'closed' ? 'open' : 'closed';
+  if (nextStatus === 'closed' && isPositionOccupied(state, door.position)) {
+    throw new RulesError('DOOR_OCCUPIED', 'An occupied doorway cannot be closed');
+  }
+
+  let workingState: GameState = {
+    ...state,
+    doors: state.doors.map(candidate =>
+      samePosition(candidate.position, door.position)
+        ? { ...candidate, status: nextStatus }
+        : candidate
+    ),
+    skavenActionsRemaining: 0,
+  };
+  const events: GameEvent[] = [
+    Object.freeze({
+      type: nextStatus === 'open' ? ('door-opened' as const) : ('door-closed' as const),
+      position: freezePosition(door.position),
+    }),
+  ];
+  if (nextStatus === 'open') {
+    const reveals = revealVisibleNoise(workingState, mission);
+    workingState = reveals.state;
+    events.push(...reveals.events);
+  }
+  events.push(
+    Object.freeze({
+      type: 'skaven-action-spent' as const,
+      skavenId: skaven.id,
+      action: 'interact' as const,
+      actionsRemaining: 0,
+    })
+  );
+  return Object.freeze({ state: freezeState(workingState), events: Object.freeze(events) });
+};
+
+const endSkavenActivation = (
+  state: GameState,
+  command: Extract<GameCommand, { type: 'end-skaven-activation' }>
+): CommandResult => {
+  const skaven = getActiveSkaven(state, command.skavenId);
+  if (
+    ((state.skavenMovementRemaining ?? 0) > 0 || (state.skavenActionsRemaining ?? 0) > 0) &&
+    !command.confirmed
+  ) {
+    throw new RulesError(
+      'CONFIRMATION_REQUIRED',
+      `Confirm ending ${SKAVEN_DEFINITIONS[skaven.definitionId].name}’s activation early`
+    );
+  }
+  const finished = finishSkavenActivation(state, skaven.id);
+  return Object.freeze({
+    state: freezeState(finished.state),
+    events: finished.events,
   });
 };
 
@@ -1524,6 +2087,16 @@ export const resolveCommand = (
       return endHeroActivation(state, command);
     case 'end-hero-phase':
       return endHeroPhase(state, command);
+    case 'start-skaven-activation':
+      return startSkavenActivation(state, command);
+    case 'move-skaven':
+      return moveSkaven(state, command, mission);
+    case 'fight-hero':
+      return fightHero(state, command, randomSource);
+    case 'interact-door-skaven':
+      return interactDoorSkaven(state, command, mission);
+    case 'end-skaven-activation':
+      return endSkavenActivation(state, command);
     default:
       throw new RulesError(
         'INVALID_COMMAND',
@@ -1563,6 +2136,15 @@ export const projectHeroView = (state: GameState): HeroGameView =>
       pushUsed: state.pushUsed,
       activatedHeroIds: Object.freeze([...state.activatedHeroIds]),
       exitedHeroIds: Object.freeze([...state.exitedHeroIds]),
+      skavenTurnStep: state.skavenTurnStep,
+      skavenActivationIds: Object.freeze([...state.skavenActivationIds]),
+      activatedSkavenIds: Object.freeze([...state.activatedSkavenIds]),
+      activeSkavenId: state.activeSkavenId,
+      skavenActionsRemaining: state.skavenActionsRemaining,
+      skavenMovementRemaining: state.skavenMovementRemaining,
+      legalSkavenMovePaths: getLegalSkavenMovePaths(state, mission),
+      legalSkavenDoorInteractions: getLegalSkavenDoorInteractions(state, mission),
+      legalSkavenFightTargetIds: getLegalSkavenFightTargetIds(state),
       legalMovePaths: getLegalHeroMovePaths(state, mission),
       legalDoorInteractions: getLegalDoorInteractions(state, mission),
       legalFightTargetIds: getLegalFightTargetIds(state),

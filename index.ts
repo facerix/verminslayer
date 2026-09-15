@@ -10,6 +10,7 @@ import { browserRandomSource } from '/src/game/gameState.js';
 import { SetupGameModule } from '/src/game/modules/setup.js';
 import { InitialNoiseGameModule } from '/src/game/modules/initialNoise.js';
 import { HeroTurnGameModule } from '/src/game/modules/heroTurn.js';
+import { SkavenTurnGameModule } from '/src/game/modules/skavenTurn.js';
 import { THE_NEST } from '/src/game/missions/theNest.js';
 
 const board = document.querySelector('game-board');
@@ -21,6 +22,7 @@ const gameModules: readonly GameModule[] = Object.freeze([
   new SetupGameModule({ session, board, setup }),
   new InitialNoiseGameModule({ session, board, setup, randomSource: browserRandomSource }),
   new HeroTurnGameModule({ session, board, setup, randomSource: browserRandomSource }),
+  new SkavenTurnGameModule({ session, board, setup }),
 ]);
 const delegateGameEvent = createGameEventDelegate(gameModules);
 const gameEventTypes = new Set(gameModules.flatMap(module => module.eventTypes));

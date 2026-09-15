@@ -205,7 +205,7 @@ export class GameBoard extends HTMLElement {
       ? ` Skaven models: ${this.#skaven
           .map(
             model =>
-              `${model.accessibleLabel} at row ${model.position.row + 1}, column ${model.position.column + 1}, facing ${model.facing}, ${model.woundsRemaining} Wounds remaining`
+              `${model.accessibleLabel} #${model.identifier} at row ${model.position.row + 1}, column ${model.position.column + 1}, facing ${model.facing}, ${model.woundsRemaining} Wounds remaining`
           )
           .join('; ')}.`
       : '';

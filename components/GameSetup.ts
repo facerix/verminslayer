@@ -1,5 +1,10 @@
 import { h } from '/src/domUtils.js';
-import { ALL_HERO_IDS, HERO_DEFINITIONS, SKAVEN_DEFINITIONS } from '/src/game/entities.js';
+import {
+  ALL_HERO_IDS,
+  getSkavenModelIdentifier,
+  HERO_DEFINITIONS,
+  SKAVEN_DEFINITIONS,
+} from '/src/game/entities.js';
 import type { HeroId } from '/src/game/entities.js';
 import type {
   Facing,
@@ -300,8 +305,12 @@ const modeOption = (value: GameMode, title: string, detail: string, checked: boo
 const facingLabel = (facing: Facing) => facing[0]!.toUpperCase() + facing.slice(1);
 
 type MoveSelection =
-  | { readonly stage: 'destination' }
-  | { readonly stage: 'facing'; readonly destination: Position };
+  | { readonly stage: 'destination'; readonly faction: 'hero' | 'skaven' }
+  | {
+      readonly stage: 'facing';
+      readonly faction: 'hero' | 'skaven';
+      readonly destination: Position;
+    };
 
 const NOISE_RESULT_NAMES: Readonly<Record<NoiseResultId, string>> = Object.freeze({
   'two-clanrats': 'Two Clanrats',
@@ -317,6 +326,7 @@ export class GameSetup extends HTMLElement {
   #error = '';
   #announcement = '';
   #moveSelection: MoveSelection | null = null;
+  #skavenHandoffComplete = false;
 
   constructor() {
     super();
@@ -324,6 +334,9 @@ export class GameSetup extends HTMLElement {
   }
 
   set view(view: HeroGameView) {
+    if (this.#view?.phase !== 'skaven' && view.phase === 'skaven') {
+      this.#skavenHandoffComplete = false;
+    }
     this.#view = view;
     this.#privateNoiseView = null;
     this.#error = '';
@@ -356,12 +369,22 @@ export class GameSetup extends HTMLElement {
   }
 
   chooseMoveDestination() {
-    this.#moveSelection = { stage: 'destination' };
+    this.#moveSelection = { stage: 'destination', faction: 'hero' };
     this.#render();
   }
 
   chooseMoveFacing(destination: Position) {
-    this.#moveSelection = { stage: 'facing', destination };
+    this.#moveSelection = { stage: 'facing', faction: 'hero', destination };
+    this.#render();
+  }
+
+  chooseSkavenMoveDestination() {
+    this.#moveSelection = { stage: 'destination', faction: 'skaven' };
+    this.#render();
+  }
+
+  chooseSkavenMoveFacing(destination: Position) {
+    this.#moveSelection = { stage: 'facing', faction: 'skaven', destination };
     this.#render();
   }
 
@@ -431,6 +454,17 @@ export class GameSetup extends HTMLElement {
       this.#announcement = `${HERO_DEFINITIONS[latest.heroId].name} ended their activation.`;
     } else if (latest?.type === 'skaven-turn-started') {
       this.#announcement = `Hero phase complete. Skaven Turn ${latest.round} begins.`;
+    } else if (latest?.type === 'skaven-activation-started') {
+      const skaven = this.#view?.skaven.find(candidate => candidate.id === latest.skavenId);
+      this.#announcement = `${skaven ? `${SKAVEN_DEFINITIONS[skaven.definitionId].name} #${getSkavenModelIdentifier(skaven.id)}` : 'Skaven'} begins an activation with ${latest.movement} Movement and ${latest.actions} Action.`;
+    } else if (latest?.type === 'skaven-movement-completed') {
+      this.#announcement = `${latest.skavenId} completed Movement after ${latest.spaces} space${latest.spaces === 1 ? '' : 's'}.`;
+    } else if (latest?.type === 'skaven-action-spent') {
+      this.#announcement = `${latest.skavenId} spent 1 Action to ${latest.action}.`;
+    } else if (latest?.type === 'skaven-activation-ended') {
+      this.#announcement = `${latest.skavenId} ended its activation.`;
+    } else if (latest?.type === 'revealed-skaven-activations-complete') {
+      this.#announcement = 'Every Skaven that began the turn revealed has activated.';
     }
   }
 
@@ -656,19 +690,7 @@ export class GameSetup extends HTMLElement {
       ]);
     }
 
-    if (this.#view?.phase === 'skaven') {
-      return h('div', { className: 'complete' }, [
-        h('div', {}, [
-          h('p', { className: 'eyebrow', textContent: `Round ${this.#view.round}` }),
-          h('h2', { textContent: 'Skaven turn' }),
-          h('p', {
-            textContent:
-              'Every eligible hero has activated. Skaven activation and noise movement arrive in the next reviewable slice.',
-          }),
-        ]),
-        this.#renderCombatLog(),
-      ]);
-    }
+    if (this.#view?.phase === 'skaven') return this.#renderSkavenTurn();
 
     const activeHero = this.#view?.heroes.find(hero => hero.id === this.#view?.activeHeroId);
     const header = h('div', {}, [
@@ -704,7 +726,7 @@ export class GameSetup extends HTMLElement {
       const cancelMove = h('button', { type: 'button', textContent: 'Cancel move' });
       cancelMove.addEventListener('click', () => this.#dispatchUiEvent('hero-move-cancelled'));
 
-      if (this.#moveSelection?.stage === 'facing') {
+      if (this.#moveSelection?.stage === 'facing' && this.#moveSelection.faction === 'hero') {
         const { destination } = this.#moveSelection;
         const facingSelect = h('select', { id: 'move-facing', name: 'move-facing' });
         const facings = this.#view?.facingChangeAvailable
@@ -744,7 +766,8 @@ export class GameSetup extends HTMLElement {
         ]);
       }
 
-      const choosingDestination = this.#moveSelection?.stage === 'destination';
+      const choosingDestination =
+        this.#moveSelection?.stage === 'destination' && this.#moveSelection.faction === 'hero';
       const move = h('button', {
         type: 'button',
         textContent: choosingDestination
@@ -867,6 +890,209 @@ export class GameSetup extends HTMLElement {
       roster,
       this.#renderCombatLog(),
       endPhase,
+    ]);
+  }
+
+  #renderSkavenTurn(): HTMLElement {
+    if (this.#view?.mode === 'two-player' && !this.#skavenHandoffComplete) {
+      const button = h('button', { type: 'button', textContent: 'I am the Skaven player' });
+      button.addEventListener('click', () => {
+        this.#skavenHandoffComplete = true;
+        this.#render();
+      });
+      return h('div', { className: 'handoff' }, [
+        h('p', { className: 'eyebrow', textContent: 'Pass the device' }),
+        h('h2', { textContent: `Skaven Turn ${this.#view.round}` }),
+        h('p', {
+          textContent: 'Hand the device to the Skaven player before revealing their turn controls.',
+        }),
+        button,
+      ]);
+    }
+
+    if (this.#view?.skavenTurnStep !== 'activate-skaven') {
+      return h('div', { className: 'complete' }, [
+        h('div', {}, [
+          h('p', { className: 'eyebrow', textContent: `Round ${this.#view?.round ?? 1}` }),
+          h('h2', { textContent: 'Activate Noise' }),
+          h('p', {
+            textContent:
+              'Every Skaven that began the turn revealed has activated. Noise movement, React, and reinforcement are the next Slice 6 increment.',
+          }),
+        ]),
+        this.#renderCombatLog(),
+      ]);
+    }
+
+    const active = this.#view.skaven.find(skaven => skaven.id === this.#view?.activeSkavenId);
+    const header = h('div', {}, [
+      h('p', { className: 'eyebrow', textContent: `Round ${this.#view.round}` }),
+      h('h2', { textContent: 'Skaven turn' }),
+      h('dl', { className: 'turn-facts' }, [
+        h('div', {}, [
+          h('dt', { textContent: 'Command' }),
+          h('dd', { textContent: String(this.#view.command) }),
+        ]),
+        h('div', {}, [
+          h('dt', { textContent: 'Actions' }),
+          h('dd', {
+            textContent:
+              this.#view.skavenActionsRemaining === null
+                ? '—'
+                : String(this.#view.skavenActionsRemaining),
+          }),
+        ]),
+        h('div', {}, [
+          h('dt', { textContent: 'Movement' }),
+          h('dd', {
+            textContent:
+              this.#view.skavenMovementRemaining === null
+                ? '—'
+                : String(this.#view.skavenMovementRemaining),
+          }),
+        ]),
+      ]),
+    ]);
+
+    if (!active) {
+      const roster = h(
+        'ul',
+        { className: 'roster', ariaLabel: 'Skaven activation status' },
+        this.#view.skavenActivationIds.flatMap(id => {
+          const skaven = this.#view?.skaven.find(candidate => candidate.id === id);
+          if (!skaven) return [];
+          const activated = this.#view?.activatedSkavenIds.includes(id) ?? false;
+          const button = h('button', {
+            type: 'button',
+            textContent: activated ? 'Activated' : 'Activate',
+            disabled: activated,
+          });
+          button.addEventListener('click', () =>
+            this.#dispatchCommand({ type: 'start-skaven-activation', skavenId: id })
+          );
+          return [
+            h('li', {}, [
+              h('span', {
+                textContent: `${SKAVEN_DEFINITIONS[skaven.definitionId].name} · #${getSkavenModelIdentifier(id)}`,
+              }),
+              button,
+            ]),
+          ];
+        })
+      );
+      return h('div', { className: 'turn-status' }, [
+        header,
+        h('p', { className: 'help', textContent: 'Choose the next revealed Skaven to activate.' }),
+        roster,
+        this.#renderCombatLog(),
+      ]);
+    }
+
+    if (this.#moveSelection?.stage === 'facing' && this.#moveSelection.faction === 'skaven') {
+      const facingSelect = h('select', { id: 'skaven-move-facing', name: 'skaven-move-facing' });
+      for (const facing of ['north', 'east', 'south', 'west'] as const) {
+        facingSelect.append(
+          h('option', {
+            value: facing,
+            textContent: facingLabel(facing),
+            selected: facing === active.facing,
+          })
+        );
+      }
+      const complete = h('button', { type: 'button', textContent: 'Complete Movement' });
+      complete.addEventListener('click', () =>
+        this.#dispatchUiEvent('skaven-move-facing-selected', facingSelect.value as Facing)
+      );
+      const cancel = h('button', { type: 'button', textContent: 'Cancel move' });
+      cancel.addEventListener('click', () => this.#dispatchUiEvent('skaven-move-cancelled'));
+      const destination = this.#moveSelection.destination;
+      return h('div', { className: 'activation-card' }, [
+        header,
+        h('h3', {
+          textContent: `${SKAVEN_DEFINITIONS[active.definitionId].name} · #${getSkavenModelIdentifier(active.id)}`,
+        }),
+        h('p', {
+          className: 'help',
+          textContent: `Destination: row ${destination.row + 1}, column ${destination.column + 1}. Choose final facing.`,
+        }),
+        h('div', { className: 'action-grid' }, [
+          h('label', {}, [h('span', { textContent: 'Final facing' }), facingSelect]),
+          complete,
+          cancel,
+        ]),
+      ]);
+    }
+
+    const choosingDestination =
+      this.#moveSelection?.stage === 'destination' && this.#moveSelection.faction === 'skaven';
+    const hasOpenMovementPath = this.#view.legalSkavenMovePaths.some(path => path.steps.length > 0);
+    const move = h('button', {
+      type: 'button',
+      textContent: choosingDestination
+        ? 'Choosing destination…'
+        : this.#view.skavenMovementRemaining === 0
+          ? 'Movement Complete'
+          : hasOpenMovementPath
+            ? 'Choose Movement'
+            : 'Hold Position',
+      disabled: choosingDestination || this.#view.skavenMovementRemaining === 0,
+    });
+    move.addEventListener('click', () => this.#dispatchUiEvent('skaven-move-requested'));
+    const fight = h('button', {
+      type: 'button',
+      textContent: 'Fight · 1 Action',
+      disabled: this.#view.legalSkavenFightTargetIds.length === 0,
+    });
+    fight.addEventListener('click', () => this.#dispatchUiEvent('skaven-fight-requested'));
+    const door = h('button', {
+      type: 'button',
+      textContent: 'Door · 1 Action',
+      disabled: this.#view.legalSkavenDoorInteractions.length === 0,
+    });
+    door.addEventListener('click', () => this.#dispatchUiEvent('skaven-door-requested'));
+    const end = h('button', { type: 'button', textContent: 'End activation' });
+    end.addEventListener('click', () => {
+      const command: GameCommand = {
+        type: 'end-skaven-activation',
+        skavenId: active.id,
+        confirmed: true,
+      };
+      if (
+        (this.#view?.skavenMovementRemaining ?? 0) > 0 ||
+        (this.#view?.skavenActionsRemaining ?? 0) > 0
+      ) {
+        this.#confirmCommand(
+          `End ${SKAVEN_DEFINITIONS[active.definitionId].name} #${getSkavenModelIdentifier(active.id)}’s activation early?`,
+          command
+        );
+      } else {
+        this.#dispatchCommand(command);
+      }
+    });
+    const cancel = h('button', { type: 'button', textContent: 'Cancel move' });
+    cancel.addEventListener('click', () => this.#dispatchUiEvent('skaven-move-cancelled'));
+
+    return h('div', { className: 'activation-card' }, [
+      header,
+      h('h3', {
+        textContent: `${SKAVEN_DEFINITIONS[active.definitionId].name} · #${getSkavenModelIdentifier(active.id)}`,
+      }),
+      h('p', {
+        className: 'help',
+        textContent: choosingDestination
+          ? 'Select a highlighted destination, including the current square to hold position.'
+          : this.#view.skavenMovementRemaining === 0
+            ? 'Movement is complete. Take one Action or end the activation.'
+            : hasOpenMovementPath
+              ? 'Complete this model’s Movement before taking its Action.'
+              : 'This model is blocked by terrain or other models. Hold position to complete Movement.',
+      }),
+      h(
+        'div',
+        { className: 'action-grid' },
+        choosingDestination ? [move, cancel] : [move, fight, door]
+      ),
+      ...(choosingDestination ? [] : [this.#renderCombatLog(), end]),
     ]);
   }
 

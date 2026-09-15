@@ -174,5 +174,11 @@ export const SKAVEN_DEFINITIONS: Readonly<Record<SkavenId, EntityDefinition<Skav
     ]),
   });
 
+export const getSkavenModelIdentifier = (modelId: string): string => {
+  const match = /^skaven-(\d+)$/.exec(modelId);
+  if (!match) throw new TypeError(`Invalid Skaven model id: ${modelId}`);
+  return match[1]!;
+};
+
 export const isHeroId = (value: string): value is HeroId =>
   (ALL_HERO_IDS as readonly string[]).includes(value);

@@ -15,10 +15,12 @@ export interface BoardHeroPresentation {
 export interface BoardSkavenPresentation {
   readonly id: string;
   readonly label: string;
+  readonly identifier: string;
   readonly accessibleLabel: string;
   readonly position: Position;
   readonly facing: Facing;
   readonly woundsRemaining: number;
+  readonly activationStatus?: 'ready' | 'active' | 'activated';
 }
 
 export interface BoardNoisePresentation {
@@ -174,6 +176,30 @@ const drawWounds = (
   context.fillText(String(woundsRemaining), badgeX, badgeY);
 };
 
+const drawIdentifier = (
+  context: CanvasRenderingContext2D,
+  centerX: number,
+  centerY: number,
+  radius: number,
+  identifier: string
+) => {
+  const badgeRadius = radius * 0.38;
+  const badgeX = centerX - radius * 0.72;
+  const badgeY = centerY - radius * 0.72;
+  context.beginPath();
+  context.arc(badgeX, badgeY, badgeRadius, 0, Math.PI * 2);
+  context.fillStyle = '#d9a849';
+  context.fill();
+  context.strokeStyle = '#241914';
+  context.lineWidth = Math.max(1, radius * 0.1);
+  context.stroke();
+  context.fillStyle = '#241914';
+  context.font = `700 ${Math.max(8, radius * 0.62)}px sans-serif`;
+  context.textAlign = 'center';
+  context.textBaseline = 'middle';
+  context.fillText(identifier, badgeX, badgeY);
+};
+
 export const renderBoard = (
   context: CanvasRenderingContext2D,
   board: ParsedMap,
@@ -281,9 +307,9 @@ export const renderBoard = (
     context.save();
     context.beginPath();
     context.arc(centerX, centerY, radius, 0, Math.PI * 2);
-    context.fillStyle = '#7f3034';
+    context.fillStyle = skaven.activationStatus === 'activated' ? '#65575a' : '#7f3034';
     context.fill();
-    context.strokeStyle = '#efb0a7';
+    context.strokeStyle = skaven.activationStatus === 'active' ? '#f3d38b' : '#efb0a7';
     context.lineWidth = Math.max(2, geometry.squareSize * 0.07);
     context.stroke();
     context.beginPath();
@@ -299,6 +325,7 @@ export const renderBoard = (
     context.textBaseline = 'middle';
     context.fillText(skaven.label, centerX, centerY);
     drawWounds(context, centerX, centerY, radius, skaven.woundsRemaining);
+    drawIdentifier(context, centerX, centerY, radius, skaven.identifier);
     context.restore();
   }
 

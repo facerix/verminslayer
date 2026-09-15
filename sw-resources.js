@@ -21,6 +21,7 @@ const AppCacheResources = Object.freeze({
     '/src/game/modules/setup.js',
     '/src/game/modules/initialNoise.js',
     '/src/game/modules/heroTurn.js',
+    '/src/game/modules/skavenTurn.js',
     '/src/game/missions/theNest.js',
     '/src/game/missions/registry.js',
     '/src/game/rulesError.js',

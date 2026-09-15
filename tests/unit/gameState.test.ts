@@ -724,7 +724,7 @@ test('heroes cannot move onto or through intact nests, but can cross destroyed n
   const besideNest: GameState = {
     ...base,
     heroes: Object.freeze([
-      Object.freeze({ ...base.heroes[0]!, position: Object.freeze({ row: 11, column: 1 }) }),
+      Object.freeze({ ...base.heroes[0]!, position: Object.freeze({ row: 8, column: 1 }) }),
     ]),
   };
   const active = resolveCommand(
@@ -733,13 +733,13 @@ test('heroes cannot move onto or through intact nests, but can cross destroyed n
     randomSource
   ).state;
   const pathAcrossNest = Object.freeze([
-    Object.freeze({ row: 11, column: 2 }),
-    Object.freeze({ row: 11, column: 3 }),
+    Object.freeze({ row: 9, column: 1 }),
+    Object.freeze({ row: 10, column: 1 }),
   ]);
 
   assert.ok(
     !projectHeroView(active).legalMovePaths.some(
-      path => path.destination.row === 11 && path.destination.column === 2
+      path => path.destination.row === 9 && path.destination.column === 1
     )
   );
   assert.throws(
@@ -756,7 +756,7 @@ test('heroes cannot move onto or through intact nests, but can cross destroyed n
     ...active,
     nests: Object.freeze(
       active.nests.map(nest =>
-        nest.position.row === 11 && nest.position.column === 2
+        nest.position.row === 9 && nest.position.column === 1
           ? Object.freeze({ ...nest, status: 'destroyed' as const })
           : nest
       )
@@ -764,7 +764,7 @@ test('heroes cannot move onto or through intact nests, but can cross destroyed n
   };
   assert.deepEqual(
     projectHeroView(destroyedNest).legalMovePaths.find(
-      path => path.destination.row === 11 && path.destination.column === 3
+      path => path.destination.row === 10 && path.destination.column === 1
     )?.steps,
     pathAcrossNest
   );
@@ -774,7 +774,7 @@ test('heroes cannot move onto or through intact nests, but can cross destroyed n
       { type: 'move-hero', heroId: 'gotrek', path: pathAcrossNest, facing: 'east' },
       randomSource
     ).state.heroes[0]?.position,
-    { row: 11, column: 3 }
+    { row: 10, column: 1 }
   );
 });
 
@@ -957,7 +957,7 @@ test('ending an activation early and ending the Hero phase require explicit conf
   assert.equal(ended.state.phase, 'skaven');
   assert.deepEqual(
     ended.events.map(event => event.type),
-    ['hero-phase-ended', 'skaven-turn-started']
+    ['hero-phase-ended', 'skaven-turn-started', 'revealed-skaven-activations-complete']
   );
 });
 

@@ -4,7 +4,7 @@ import type {
   BoardNoisePresentation,
   BoardSkavenPresentation,
 } from '/src/canvas/boardRenderer.js';
-import { HERO_DEFINITIONS } from '/src/game/entities.js';
+import { getSkavenModelIdentifier, HERO_DEFINITIONS } from '/src/game/entities.js';
 import type { HeroId } from '/src/game/entities.js';
 import type { GameModule } from '/src/game/gameModule.js';
 import type { GameSession } from '/src/game/gameSession.js';
@@ -133,6 +133,7 @@ export class HeroTurnGameModule implements GameModule {
     });
     this.#board.skaven = view.skaven.map(skaven => ({
       id: skaven.id,
+      identifier: getSkavenModelIdentifier(skaven.id),
       label:
         skaven.definitionId === 'clanrat'
           ? 'CR'

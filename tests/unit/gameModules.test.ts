@@ -11,6 +11,7 @@ import type { GameModule } from '../../src/game/gameModule.ts';
 import { SetupGameModule } from '../../src/game/modules/setup.ts';
 import { InitialNoiseGameModule } from '../../src/game/modules/initialNoise.ts';
 import { HeroTurnGameModule } from '../../src/game/modules/heroTurn.ts';
+import { SkavenTurnGameModule } from '../../src/game/modules/skavenTurn.ts';
 import { GameSession } from '../../src/game/gameSession.ts';
 import type {
   GameEvent,
@@ -74,6 +75,14 @@ class SetupViewSpy {
   }
 
   chooseMoveFacing(destination: Position) {
+    this.moveSelection = destination;
+  }
+
+  chooseSkavenMoveDestination() {
+    this.moveSelection = 'destination';
+  }
+
+  chooseSkavenMoveFacing(destination: Position) {
     this.moveSelection = destination;
   }
 
@@ -449,6 +458,74 @@ test('the Hero-turn module automatically resolves a revealed 3C group in solo mo
   assert.equal(setup.announced.filter(event => event.type === 'skaven-placed').length, 3);
 });
 
+test('the session automatically places consecutive revealed models with one legal square', () => {
+  const drawValues = [0.45, 0, 0];
+  const session = new GameSession(THE_NEST, {
+    next: () => drawValues.shift() ?? 0,
+  });
+  session.dispatch({ type: 'configure-game', mode: 'two-player', heroIds: ['felix'] });
+  session.dispatch({
+    type: 'deploy-hero',
+    heroId: 'felix',
+    position: { row: 15, column: 4 },
+    facing: 'north',
+  });
+  for (const spawn of [
+    { row: 10, column: 0 },
+    { row: 0, column: 10 },
+    { row: 8, column: 12 },
+  ]) {
+    session.dispatch({ type: 'draw-initial-noise' });
+    session.dispatch({ type: 'place-initial-noise', position: spawn });
+  }
+
+  const setup = new SetupViewSpy();
+  const board = new BoardViewSpy();
+  const module = new HeroTurnGameModule({ session, setup, board, randomSource });
+  for (const command of [
+    { type: 'start-hero-activation', heroId: 'felix' },
+    {
+      type: 'move-hero',
+      heroId: 'felix',
+      path: [
+        { row: 14, column: 4 },
+        { row: 13, column: 4 },
+        { row: 13, column: 5 },
+      ],
+      facing: 'north',
+    },
+    { type: 'interact-door', heroId: 'felix', position: { row: 12, column: 5 } },
+    { type: 'dash-hero', heroId: 'felix' },
+    {
+      type: 'move-hero',
+      heroId: 'felix',
+      path: [
+        { row: 12, column: 5 },
+        { row: 11, column: 5 },
+        { row: 10, column: 5 },
+      ],
+      facing: 'west',
+    },
+  ] as const) {
+    module.handleEvent(new CustomEvent('game-command', { detail: command }));
+  }
+
+  assert.equal(setup.error, '');
+  assert.deepEqual(
+    session.heroView.skaven.map(skaven => ({ position: skaven.position, facing: skaven.facing })),
+    [
+      { position: { row: 10, column: 0 }, facing: 'east' },
+      { position: { row: 10, column: 1 }, facing: 'east' },
+    ]
+  );
+  assert.deepEqual(session.heroView.revealedNoise[0]?.remainingModels, ['clanrat']);
+  assert.deepEqual(session.legalSkavenPlacementPositions('noise-1'), [
+    { row: 9, column: 1 },
+    { row: 11, column: 1 },
+  ]);
+  assert.equal(setup.announced.filter(event => event.type === 'skaven-placed').length, 2);
+});
+
 test('setup and noise modules leave Hero-turn commands for the Hero-turn module', () => {
   const session = new GameSession(THE_NEST, { next: () => 0 });
   completeSoloSetup(session);
@@ -464,4 +541,118 @@ test('setup and noise modules leave Hero-turn commands for the Hero-turn module'
   assert.equal(setupModule.handleEvent(event), false);
   assert.equal(noiseModule.handleEvent(event), false);
   assert.equal(heroModule.handleEvent(event), true);
+});
+
+test('the Skaven-turn module offers a direct hold when no movement path is open', () => {
+  const drawValues = [0.45, 0, 0];
+  const session = new GameSession(THE_NEST, {
+    next: () => drawValues.shift() ?? 0,
+  });
+  session.dispatch({ type: 'configure-game', mode: 'solo', heroIds: ['felix'] });
+  session.dispatch({
+    type: 'deploy-hero',
+    heroId: 'felix',
+    position: { row: 15, column: 4 },
+    facing: 'north',
+  });
+  for (const spawn of [
+    { row: 10, column: 0 },
+    { row: 0, column: 10 },
+    { row: 8, column: 12 },
+  ]) {
+    session.dispatch({ type: 'draw-initial-noise' });
+    session.dispatch({ type: 'place-initial-noise', position: spawn });
+  }
+
+  const setup = new SetupViewSpy();
+  const board = new BoardViewSpy();
+  const heroModule = new HeroTurnGameModule({
+    session,
+    setup,
+    board,
+    randomSource: { next: () => 0 },
+  });
+  for (const command of [
+    { type: 'start-hero-activation', heroId: 'felix' },
+    {
+      type: 'move-hero',
+      heroId: 'felix',
+      path: [
+        { row: 14, column: 4 },
+        { row: 13, column: 4 },
+        { row: 13, column: 5 },
+      ],
+      facing: 'north',
+    },
+    { type: 'interact-door', heroId: 'felix', position: { row: 12, column: 5 } },
+    { type: 'dash-hero', heroId: 'felix' },
+    {
+      type: 'move-hero',
+      heroId: 'felix',
+      path: [
+        { row: 12, column: 5 },
+        { row: 11, column: 5 },
+        { row: 10, column: 5 },
+      ],
+      facing: 'west',
+    },
+    { type: 'end-hero-activation', heroId: 'felix', confirmed: true },
+    { type: 'end-hero-phase', confirmed: true },
+  ] as const) {
+    heroModule.handleEvent(new CustomEvent('game-command', { detail: command }));
+  }
+
+  assert.equal(session.heroView.skavenTurnStep, 'activate-skaven');
+  const module = new SkavenTurnGameModule({ session, setup, board });
+  module.render();
+  const skavenId = session.heroView.skavenActivationIds[0]!;
+  assert.equal(
+    module.handleEvent(
+      new CustomEvent('game-command', {
+        detail: { type: 'start-skaven-activation', skavenId },
+      })
+    ),
+    true
+  );
+  assert.equal(setup.view.activeSkavenId, skavenId);
+  assert.equal(board.skaven.find(skaven => skaven.id === skavenId)?.activationStatus, 'active');
+  assert.equal(board.skaven.find(skaven => skaven.id === 'skaven-1')?.identifier, '1');
+  assert.equal(board.skaven.find(skaven => skaven.id === 'skaven-2')?.identifier, '2');
+  assert.deepEqual(session.heroView.legalSkavenMovePaths, [
+    {
+      destination: { row: 10, column: 0 },
+      steps: [],
+    },
+  ]);
+
+  module.handleEvent(new CustomEvent('skaven-move-requested'));
+  assert.equal(setup.view.skavenMovementRemaining, 4);
+  assert.deepEqual(setup.moveSelection, { row: 10, column: 0 });
+  assert.equal(board.legalSquares.length, 0);
+  module.handleEvent(new CustomEvent('skaven-move-facing-selected', { detail: 'east' }));
+  assert.equal(setup.view.skavenMovementRemaining, 0);
+  assert.equal(setup.moveSelection, null);
+  assert.equal(board.legalSquares.length, 0);
+
+  module.handleEvent(
+    new CustomEvent('game-command', {
+      detail: { type: 'end-skaven-activation', skavenId, confirmed: true },
+    })
+  );
+  module.handleEvent(
+    new CustomEvent('game-command', {
+      detail: { type: 'start-skaven-activation', skavenId: 'skaven-2' },
+    })
+  );
+  module.handleEvent(new CustomEvent('skaven-move-requested'));
+  assert.equal(setup.moveSelection, 'destination');
+  assert.ok(board.legalSquares.some(position => position.row === 11 && position.column === 1));
+  module.handleEvent(new CustomEvent('board-square-selected', { detail: { row: 11, column: 1 } }));
+  assert.deepEqual(setup.moveSelection, { row: 11, column: 1 });
+  module.handleEvent(new CustomEvent('skaven-move-facing-selected', { detail: 'south' }));
+  assert.equal(setup.view.skavenMovementRemaining, 0);
+  assert.deepEqual(setup.view.skaven.find(skaven => skaven.id === 'skaven-2')?.position, {
+    row: 11,
+    column: 1,
+  });
 });
