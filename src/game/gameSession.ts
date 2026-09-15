@@ -2,6 +2,7 @@ import {
   createInitialGameState,
   getLegalDeploymentPositions,
   getLegalNoiseSpawnPositions,
+  getLegalNoiseMovePaths,
   getLegalSkavenDoorInteractions,
   getLegalSkavenFightTargetIds,
   getLegalSkavenMovePaths,
@@ -52,6 +53,10 @@ export class GameSession {
 
   get legalNoiseSpawnPositions(): readonly Position[] {
     return getLegalNoiseSpawnPositions(this.#state, this.#mission);
+  }
+
+  get legalNoiseMovePaths() {
+    return getLegalNoiseMovePaths(this.#state, this.#mission);
   }
 
   legalSkavenPlacementPositions(noiseId: string): readonly Position[] {

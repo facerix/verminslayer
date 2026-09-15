@@ -89,3 +89,85 @@ export const isLegalMovementPath = (
   }
   return true;
 };
+
+/**
+ * Returns every shortest-route advance toward the nearest reachable goal. Paths stop at
+ * the goal or after the movement allowance, whichever comes first.
+ */
+export const getShortestAdvancePaths = (
+  context: MovementContext,
+  goals: readonly Position[]
+): readonly ReachablePath[] => {
+  if (!Number.isInteger(context.maximumSteps) || context.maximumSteps < 0) {
+    throw new RangeError('Maximum movement must be a non-negative integer');
+  }
+
+  const goalKeys = new Set(goals.map(positionKey));
+  const distances = new Map<string, number>();
+  const queue: Position[] = [];
+  for (const goal of goals) {
+    if (!isPassable(context, goal)) continue;
+    const key = positionKey(goal);
+    if (distances.has(key)) continue;
+    distances.set(key, 0);
+    queue.push(freezePosition(goal));
+  }
+
+  while (queue.length > 0) {
+    const current = queue.shift()!;
+    const distance = distances.get(positionKey(current))!;
+    for (const offset of NEIGHBOR_OFFSETS) {
+      const next = freezePosition({
+        row: current.row + offset.row,
+        column: current.column + offset.column,
+      });
+      const key = positionKey(next);
+      if (
+        distances.has(key) ||
+        (!isPassable(context, next) && key !== positionKey(context.start))
+      ) {
+        continue;
+      }
+      distances.set(key, distance + 1);
+      queue.push(next);
+    }
+  }
+
+  const startDistance = distances.get(positionKey(context.start));
+  if (startDistance === undefined) return Object.freeze([]);
+  if (startDistance === 0 || context.maximumSteps === 0) {
+    return Object.freeze([
+      Object.freeze({ destination: freezePosition(context.start), steps: Object.freeze([]) }),
+    ]);
+  }
+
+  const paths: ReachablePath[] = [];
+  const walk = (position: Position, steps: readonly Position[]) => {
+    const distance = distances.get(positionKey(position));
+    if (
+      distance === undefined ||
+      distance === 0 ||
+      steps.length === context.maximumSteps ||
+      goalKeys.has(positionKey(position))
+    ) {
+      paths.push(
+        Object.freeze({
+          destination: freezePosition(position),
+          steps: Object.freeze([...steps]),
+        })
+      );
+      return;
+    }
+    for (const offset of NEIGHBOR_OFFSETS) {
+      const next = freezePosition({
+        row: position.row + offset.row,
+        column: position.column + offset.column,
+      });
+      if (distances.get(positionKey(next)) === distance - 1 && isPassable(context, next)) {
+        walk(next, [...steps, next]);
+      }
+    }
+  };
+  walk(context.start, []);
+  return Object.freeze(paths);
+};

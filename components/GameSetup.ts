@@ -327,6 +327,8 @@ export class GameSetup extends HTMLElement {
   #announcement = '';
   #moveSelection: MoveSelection | null = null;
   #skavenHandoffComplete = false;
+  #reactHandoffComplete = false;
+  #reactHandoffKey: string | null = null;
 
   constructor() {
     super();
@@ -336,6 +338,16 @@ export class GameSetup extends HTMLElement {
   set view(view: HeroGameView) {
     if (this.#view?.phase !== 'skaven' && view.phase === 'skaven') {
       this.#skavenHandoffComplete = false;
+    }
+    const reactKey = view.pendingReact
+      ? `${view.pendingReact.source}:${view.pendingReact.sourceId}`
+      : null;
+    if (reactKey !== this.#reactHandoffKey) {
+      if (this.#reactHandoffKey && !reactKey && view.mode === 'two-player') {
+        this.#skavenHandoffComplete = false;
+      }
+      this.#reactHandoffKey = reactKey;
+      this.#reactHandoffComplete = false;
     }
     this.#view = view;
     this.#privateNoiseView = null;
@@ -432,7 +444,7 @@ export class GameSetup extends HTMLElement {
     } else if (latest?.type === 'deployment-complete') {
       this.#announcement = 'Hero deployment complete. Initial noise setup is next.';
     } else if (latest?.type === 'hero-turn-started') {
-      this.#announcement = `Initial noise setup complete. Hero Turn ${latest.round} begins with ${latest.command} Command.`;
+      this.#announcement = `${latest.round === 1 ? 'Initial noise setup complete. ' : ''}Hero Turn ${latest.round} begins with ${latest.command} Command.`;
     } else if (latest?.type === 'noise-drawn') {
       this.#announcement = 'A private noise result was drawn.';
     } else if (latest?.type === 'noise-placed') {
@@ -465,6 +477,20 @@ export class GameSetup extends HTMLElement {
       this.#announcement = `${latest.skavenId} ended its activation.`;
     } else if (latest?.type === 'revealed-skaven-activations-complete') {
       this.#announcement = 'Every Skaven that began the turn revealed has activated.';
+    } else if (latest?.type === 'react-window-opened') {
+      this.#announcement = 'Enemy Movement complete. The Hero player may React.';
+    } else if (latest?.type === 'react-skipped') {
+      this.#announcement = 'The Hero player declined to React.';
+    } else if (latest?.type === 'hero-reacted') {
+      this.#announcement = `${HERO_DEFINITIONS[latest.heroId].name} Reacted with ${latest.action}; ${latest.commandRemaining} Command remains.`;
+    } else if (latest?.type === 'noise-activation-started') {
+      this.#announcement = 'A Noise token begins its activation.';
+    } else if (latest?.type === 'noise-activation-ended') {
+      this.#announcement = 'Noise activation complete.';
+    } else if (latest?.type === 'reinforcement-started') {
+      this.#announcement = 'Noise activation complete. Reinforcement begins.';
+    } else if (latest?.type === 'reinforcement-complete') {
+      this.#announcement = 'Reinforcement complete.';
     }
   }
 
@@ -894,7 +920,9 @@ export class GameSetup extends HTMLElement {
   }
 
   #renderSkavenTurn(): HTMLElement {
-    if (this.#view?.mode === 'two-player' && !this.#skavenHandoffComplete) {
+    const view = this.#view;
+    if (!view) return h('div');
+    if (view.mode === 'two-player' && !this.#skavenHandoffComplete) {
       const button = h('button', { type: 'button', textContent: 'I am the Skaven player' });
       button.addEventListener('click', () => {
         this.#skavenHandoffComplete = true;
@@ -902,7 +930,7 @@ export class GameSetup extends HTMLElement {
       });
       return h('div', { className: 'handoff' }, [
         h('p', { className: 'eyebrow', textContent: 'Pass the device' }),
-        h('h2', { textContent: `Skaven Turn ${this.#view.round}` }),
+        h('h2', { textContent: `Skaven Turn ${view.round}` }),
         h('p', {
           textContent: 'Hand the device to the Skaven player before revealing their turn controls.',
         }),
@@ -910,55 +938,45 @@ export class GameSetup extends HTMLElement {
       ]);
     }
 
-    if (this.#view?.skavenTurnStep !== 'activate-skaven') {
-      return h('div', { className: 'complete' }, [
-        h('div', {}, [
-          h('p', { className: 'eyebrow', textContent: `Round ${this.#view?.round ?? 1}` }),
-          h('h2', { textContent: 'Activate Noise' }),
-          h('p', {
-            textContent:
-              'Every Skaven that began the turn revealed has activated. Noise movement, React, and reinforcement are the next Slice 6 increment.',
-          }),
-        ]),
-        this.#renderCombatLog(),
-      ]);
+    if (view.pendingReact) return this.#renderReactWindow();
+    if (view.skavenTurnStep === 'activate-noise' && view.noiseActionIds.length === 0) {
+      return this.#renderNoiseActivation();
     }
+    if (view.skavenTurnStep === 'reinforce') return this.#renderReinforcement();
 
-    const active = this.#view.skaven.find(skaven => skaven.id === this.#view?.activeSkavenId);
+    const active = view.skaven.find(skaven => skaven.id === view.activeSkavenId);
     const header = h('div', {}, [
-      h('p', { className: 'eyebrow', textContent: `Round ${this.#view.round}` }),
+      h('p', { className: 'eyebrow', textContent: `Round ${view.round}` }),
       h('h2', { textContent: 'Skaven turn' }),
       h('dl', { className: 'turn-facts' }, [
         h('div', {}, [
           h('dt', { textContent: 'Command' }),
-          h('dd', { textContent: String(this.#view.command) }),
+          h('dd', { textContent: String(view.command) }),
         ]),
         h('div', {}, [
           h('dt', { textContent: 'Actions' }),
           h('dd', {
             textContent:
-              this.#view.skavenActionsRemaining === null
-                ? '—'
-                : String(this.#view.skavenActionsRemaining),
+              view.skavenActionsRemaining === null ? '—' : String(view.skavenActionsRemaining),
           }),
         ]),
         h('div', {}, [
           h('dt', { textContent: 'Movement' }),
           h('dd', {
             textContent:
-              this.#view.skavenMovementRemaining === null
-                ? '—'
-                : String(this.#view.skavenMovementRemaining),
+              view.skavenMovementRemaining === null ? '—' : String(view.skavenMovementRemaining),
           }),
         ]),
       ]),
     ]);
 
     if (!active) {
+      const activationIds =
+        view.skavenTurnStep === 'activate-noise' ? view.noiseActionIds : view.skavenActivationIds;
       const roster = h(
         'ul',
         { className: 'roster', ariaLabel: 'Skaven activation status' },
-        this.#view.skavenActivationIds.flatMap(id => {
+        activationIds.flatMap(id => {
           const skaven = this.#view?.skaven.find(candidate => candidate.id === id);
           if (!skaven) return [];
           const activated = this.#view?.activatedSkavenIds.includes(id) ?? false;
@@ -982,7 +1000,13 @@ export class GameSetup extends HTMLElement {
       );
       return h('div', { className: 'turn-status' }, [
         header,
-        h('p', { className: 'help', textContent: 'Choose the next revealed Skaven to activate.' }),
+        h('p', {
+          className: 'help',
+          textContent:
+            view.skavenTurnStep === 'activate-noise'
+              ? 'Choose the next newly revealed Skaven to take its one Action. It cannot Move again.'
+              : 'Choose the next revealed Skaven to activate.',
+        }),
         roster,
         this.#renderCombatLog(),
       ]);
@@ -1025,29 +1049,29 @@ export class GameSetup extends HTMLElement {
 
     const choosingDestination =
       this.#moveSelection?.stage === 'destination' && this.#moveSelection.faction === 'skaven';
-    const hasOpenMovementPath = this.#view.legalSkavenMovePaths.some(path => path.steps.length > 0);
+    const hasOpenMovementPath = view.legalSkavenMovePaths.some(path => path.steps.length > 0);
     const move = h('button', {
       type: 'button',
       textContent: choosingDestination
         ? 'Choosing destination…'
-        : this.#view.skavenMovementRemaining === 0
+        : view.skavenMovementRemaining === 0
           ? 'Movement Complete'
           : hasOpenMovementPath
             ? 'Choose Movement'
             : 'Hold Position',
-      disabled: choosingDestination || this.#view.skavenMovementRemaining === 0,
+      disabled: choosingDestination || view.skavenMovementRemaining === 0,
     });
     move.addEventListener('click', () => this.#dispatchUiEvent('skaven-move-requested'));
     const fight = h('button', {
       type: 'button',
       textContent: 'Fight · 1 Action',
-      disabled: this.#view.legalSkavenFightTargetIds.length === 0,
+      disabled: view.legalSkavenFightTargetIds.length === 0,
     });
     fight.addEventListener('click', () => this.#dispatchUiEvent('skaven-fight-requested'));
     const door = h('button', {
       type: 'button',
       textContent: 'Door · 1 Action',
-      disabled: this.#view.legalSkavenDoorInteractions.length === 0,
+      disabled: view.legalSkavenDoorInteractions.length === 0,
     });
     door.addEventListener('click', () => this.#dispatchUiEvent('skaven-door-requested'));
     const end = h('button', { type: 'button', textContent: 'End activation' });
@@ -1081,7 +1105,7 @@ export class GameSetup extends HTMLElement {
         className: 'help',
         textContent: choosingDestination
           ? 'Select a highlighted destination, including the current square to hold position.'
-          : this.#view.skavenMovementRemaining === 0
+          : view.skavenMovementRemaining === 0
             ? 'Movement is complete. Take one Action or end the activation.'
             : hasOpenMovementPath
               ? 'Complete this model’s Movement before taking its Action.'
@@ -1093,6 +1117,161 @@ export class GameSetup extends HTMLElement {
         choosingDestination ? [move, cancel] : [move, fight, door]
       ),
       ...(choosingDestination ? [] : [this.#renderCombatLog(), end]),
+    ]);
+  }
+
+  #renderReactWindow(): HTMLElement {
+    if (!this.#view?.pendingReact) return h('div');
+    if (this.#view.mode === 'two-player' && !this.#reactHandoffComplete) {
+      const ready = h('button', { type: 'button', textContent: 'I am the Hero player' });
+      ready.addEventListener('click', () => {
+        this.#reactHandoffComplete = true;
+        this.#render();
+      });
+      return h('div', { className: 'handoff' }, [
+        h('p', { className: 'eyebrow', textContent: 'React window' }),
+        h('h2', { textContent: 'Pass the device' }),
+        h('p', {
+          textContent:
+            'The enemy completed Movement. Hand the device to the Hero player before continuing.',
+        }),
+        ready,
+      ]);
+    }
+
+    const actions: HTMLElement[] = [];
+    for (const option of this.#view.legalReactFightOptions) {
+      const skaven = this.#view.skaven.find(candidate => candidate.id === option.skavenId);
+      const button = h('button', {
+        type: 'button',
+        textContent: `${HERO_DEFINITIONS[option.heroId].name}: Fight ${skaven ? SKAVEN_DEFINITIONS[skaven.definitionId].name : 'Skaven'}`,
+      });
+      button.addEventListener('click', () =>
+        this.#dispatchCommand({ type: 'react-fight-skaven', ...option })
+      );
+      actions.push(button);
+    }
+    for (const option of this.#view.legalReactDoorOptions) {
+      const button = h('button', {
+        type: 'button',
+        textContent: `${HERO_DEFINITIONS[option.heroId].name}: Door at ${option.position.row + 1}, ${option.position.column + 1}`,
+      });
+      button.addEventListener('click', () =>
+        this.#dispatchCommand({ type: 'react-interact-door', ...option })
+      );
+      actions.push(button);
+    }
+    const skip = h('button', { type: 'button', textContent: 'Do not React' });
+    skip.addEventListener('click', () => this.#dispatchCommand({ type: 'skip-react' }));
+    return h('div', { className: 'activation-card' }, [
+      h('p', {
+        className: 'eyebrow',
+        textContent: `Round ${this.#view.round} · Hero interruption`,
+      }),
+      h('h2', { textContent: 'React · 2 Command' }),
+      h('p', {
+        className: 'help',
+        textContent:
+          actions.length > 0
+            ? 'One hero may immediately take one eligible Fight or Door action.'
+            : 'No hero has an eligible implemented 1-Action response. Continue the Skaven turn.',
+      }),
+      h('div', { className: 'action-grid' }, [...actions, skip]),
+      this.#renderCombatLog(),
+    ]);
+  }
+
+  #renderNoiseActivation(): HTMLElement {
+    if (!this.#view) return h('div');
+    const active = this.#view.noiseTokens.find(noise => noise.id === this.#view?.activeNoiseId);
+    if (active) {
+      const choosing =
+        this.#moveSelection?.stage === 'destination' && this.#moveSelection.faction === 'skaven';
+      const move = h('button', {
+        type: 'button',
+        textContent: choosing ? 'Choosing route…' : 'Move Noise toward nearest hero',
+        disabled: choosing,
+      });
+      move.addEventListener('click', () => this.#dispatchUiEvent('noise-move-requested'));
+      return h('div', { className: 'activation-card' }, [
+        h('p', { className: 'eyebrow', textContent: `Round ${this.#view.round} · Activate Noise` }),
+        h('h2', { textContent: 'Noise movement' }),
+        h('p', {
+          className: 'help',
+          textContent: choosing
+            ? 'Choose one highlighted shortest-route destination.'
+            : `Noise at row ${active.position.row + 1}, column ${active.position.column + 1} must move up to 5 toward the nearest hero.`,
+        }),
+        move,
+      ]);
+    }
+    const roster = h(
+      'ul',
+      { className: 'roster', ariaLabel: 'Noise activation status' },
+      this.#view.noiseActivationIds.flatMap(id => {
+        const noise = this.#view?.noiseTokens.find(candidate => candidate.id === id);
+        if (!noise) return [];
+        const activated = this.#view?.activatedNoiseIds.includes(id) ?? false;
+        const button = h('button', {
+          type: 'button',
+          textContent: activated ? 'Activated' : 'Activate',
+          disabled: activated,
+        });
+        button.addEventListener('click', () =>
+          this.#dispatchCommand({ type: 'start-noise-activation', noiseId: id })
+        );
+        return h('li', {}, [
+          h('span', {
+            textContent: `Noise at row ${noise.position.row + 1}, column ${noise.position.column + 1}`,
+          }),
+          button,
+        ]);
+      })
+    );
+    return h('div', { className: 'turn-status' }, [
+      h('p', { className: 'eyebrow', textContent: `Round ${this.#view.round}` }),
+      h('h2', { textContent: 'Activate Noise' }),
+      h('p', { className: 'help', textContent: 'Choose the next face-down Noise token.' }),
+      roster,
+      this.#renderCombatLog(),
+    ]);
+  }
+
+  #renderReinforcement(): HTMLElement {
+    if (!this.#view) return h('div');
+    const pending = this.#privateNoiseView?.pendingNoise;
+    if (pending) {
+      const place = h('button', { type: 'button', textContent: 'Choose a Skaven entry' });
+      place.addEventListener('click', () =>
+        this.#dispatchUiEvent('reinforcement-placement-requested')
+      );
+      return h('div', { className: 'activation-card' }, [
+        h('p', { className: 'eyebrow', textContent: 'Reinforcement · private' }),
+        h('h2', { textContent: NOISE_RESULT_NAMES[pending.resultId] }),
+        h('p', {
+          className: 'help',
+          textContent:
+            'Keep this result hidden from the Hero player and place it at an empty entry.',
+        }),
+        place,
+      ]);
+    }
+    const draw = h('button', {
+      type: 'button',
+      textContent: `Draw reinforcement ${this.#view.reinforcementDrawsResolved + 1} of ${this.#view.reinforcementDrawCount}`,
+    });
+    draw.addEventListener('click', () =>
+      this.#dispatchCommand({ type: 'draw-reinforcement-noise' })
+    );
+    return h('div', { className: 'turn-status' }, [
+      h('p', { className: 'eyebrow', textContent: `Round ${this.#view.round}` }),
+      h('h2', { textContent: 'Reinforce' }),
+      h('p', {
+        className: 'help',
+        textContent: 'Draw and privately place two Noise results. They do not activate this turn.',
+      }),
+      draw,
+      this.#renderCombatLog(),
     ]);
   }
 

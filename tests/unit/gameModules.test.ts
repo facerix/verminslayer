@@ -634,6 +634,8 @@ test('the Skaven-turn module offers a direct hold when no movement path is open'
   assert.equal(setup.moveSelection, null);
   assert.equal(board.legalSquares.length, 0);
 
+  module.handleEvent(new CustomEvent('game-command', { detail: { type: 'skip-react' } }));
+
   module.handleEvent(
     new CustomEvent('game-command', {
       detail: { type: 'end-skaven-activation', skavenId, confirmed: true },
@@ -655,4 +657,46 @@ test('the Skaven-turn module offers a direct hold when no movement path is open'
     row: 11,
     column: 1,
   });
+});
+
+test('the Skaven-turn module renders the next Hero turn after reinforcement', () => {
+  const session = new GameSession(THE_NEST, { next: () => 0 });
+  completeSoloSetup(session);
+  session.dispatch({ type: 'start-hero-activation', heroId: 'gotrek' });
+  session.dispatch({ type: 'end-hero-activation', heroId: 'gotrek', confirmed: true });
+  session.dispatch({ type: 'end-hero-phase', confirmed: true });
+
+  const setup = new SetupViewSpy();
+  const board = new BoardViewSpy();
+  const module = new SkavenTurnGameModule({ session, setup, board });
+  module.render();
+  for (const noiseId of session.heroView.noiseActivationIds) {
+    module.handleEvent(
+      new CustomEvent('game-command', {
+        detail: { type: 'start-noise-activation', noiseId },
+      })
+    );
+    module.handleEvent(new CustomEvent('noise-move-requested'));
+    if (board.legalSquares[0]) {
+      module.handleEvent(
+        new CustomEvent('board-square-selected', { detail: board.legalSquares[0] })
+      );
+    }
+  }
+  for (let draw = 0; draw < THE_NEST.noisePerTurn; draw++) {
+    module.handleEvent(
+      new CustomEvent('game-command', { detail: { type: 'draw-reinforcement-noise' } })
+    );
+    if (session.skavenView.pendingNoise) {
+      module.handleEvent(new CustomEvent('reinforcement-placement-requested'));
+      module.handleEvent(
+        new CustomEvent('board-square-selected', { detail: board.legalSquares[0]! })
+      );
+    }
+  }
+
+  assert.equal(session.heroView.phase, 'hero');
+  assert.equal(setup.view.phase, 'hero');
+  assert.equal(setup.view.round, 2);
+  assert.equal(setup.view.command, 2);
 });

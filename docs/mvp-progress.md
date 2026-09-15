@@ -8,13 +8,11 @@ from Git history.
 
 ## Current status
 
-The sixth reviewable slice, **Complete two-player Skaven turn**, is in progress. Forced
-contact reveals and the first Skaven-turn step are complete in the working tree: Noise now
-reveals in hero line of sight or adjacency, and every Skaven that began the turn revealed can
-be activated manually with one Movement and one Action. Ordinary Fight and the Clanrat's Door
-action are rules-enforced through the same immutable command boundary used by Hero turns.
-
-Noise activation, React, reinforcement, and round transition remain to complete Slice 6.
+The sixth reviewable slice, **Complete two-player Skaven turn**, is complete in the working
+tree. React now interrupts after enemy Movement, every face-down Noise token follows a
+shortest legal route toward the nearest hero, revealed Noise groups receive Actions without
+additional Movement, and two private reinforcements complete the round before Hero Turn 2
+resets the shared Command pool.
 
 | Slice | Status | Outcome |
 | --- | --- | --- |
@@ -23,7 +21,7 @@ Noise activation, React, reinforcement, and round transition remain to complete 
 | 3. Initial noise setup and privacy | Complete | Private draw/placement, solo setup AI, face-down tokens, LOS reveals, and Hero Turn 1 handoff |
 | 4. Hero activation and movement | Complete | Split Movement, two Actions, Dash, Push, legal paths, facing, doors, and phase completion |
 | 5. Revealed Skaven and core combat | Complete | Group placement, Fight actions, dice, wounds, and death |
-| 6. Complete two-player Skaven turn | In progress | Forced contact reveals and revealed-model activation complete; React, noise activation, reinforcement, and round transition remain |
+| 6. Complete two-player Skaven turn | Complete | Revealed-model activation, React, shortest-route Noise movement, action-only revealed groups, reinforcement, and round transition |
 | 7. Solo Skaven AI | Not started | Legal command generation for placement, Skaven activations, paths, targets, and attacks |
 | 8. Reactive combat mechanics | Not started | Guard, rerolls, Ward, death prevention, dice modifiers, and Rat Ogor damage |
 | 9. Active and movement abilities | Not started | Bonus attacks/movement, ranged abilities, charges, Skitter, and Smash |
@@ -161,7 +159,7 @@ Noise activation, React, reinforcement, and round transition remain to complete 
 - Split nearest-group placement and opposed dice into focused rules modules and cached both
   compiled modules for offline use.
 
-## Slice 6 progress
+## Completed in slice 6
 
 - Reconciled every current reveal site with forced contact: setup placement, hero movement,
   and opening a door now reveal Noise through hero line of sight or adjacency.
@@ -177,22 +175,38 @@ Noise activation, React, reinforcement, and round transition remain to complete 
   Nest at rules coordinate row 10, column 2.
 - Added the Skaven-turn UI module to the offline application shell and bumped both service
   worker cache versions.
+- Added explicit React windows after revealed Skaven Movement and after complete placement of
+  a group revealed by its own Noise activation. Fight and Door reactions cost 2 Command,
+  block the enemy Action until resolved, and use Hero/Skaven pass-back covers on a shared
+  device.
+- Added all-shortest-route Noise movement toward the nearest reachable hero, forced reveal at
+  the first line-of-sight or adjacency contact, turn-start Noise snapshots, and action-only
+  activations for each model in a group revealed during its own movement.
+- Added two private reinforcement draws without replacement, occupied-entry consumption,
+  immediate reveal and placement, and explicit exclusion of reinforcement models from the
+  current turn's activations.
+- Completed the round transition to the next Hero turn, clearing Skaven-turn interruption
+  state and resetting the shared Command reserve to 2.
+- Added semantic Noise activation, React, private reinforcement, and round-transition controls,
+  including shortest-route board highlighting and shared-device handoffs.
 
 ## Verification baseline
 
-At the current Slice 6 checkpoint:
+For the completed Slice 6:
 
 - `pnpm format` passed.
 - `pnpm lint` passed with zero warnings and errors.
 - `pnpm typecheck` passed.
-- `pnpm test` passed all 110 tests.
+- `pnpm test` passed all 117 tests.
 - `pnpm build` completed successfully.
-- A fresh shared-device desktop flow completed private Noise setup, revealed and placed a
-  two-Clanrat group, crossed the role-handoff cover, activated both models, completed
-  zero-square Movement, confirmed unused Actions, and reached the Noise-activation checkpoint.
-- At the checkpoint, a 700 × 900 tablet viewport had no horizontal overflow; its document
-  and body scroll widths both matched the 700-pixel viewport.
-- The verified flow produced no browser console warnings or errors.
+- A fresh shared-device desktop flow completed private Noise setup, crossed the Skaven
+  handoff, activated all three Noise tokens, reached reinforcement, consumed both blocked
+  entry draws, and exercised the round-transition integration path. The browser pass exposed
+  and fixed a stale Reinforce panel after the state reached Hero Turn 2; a module-level
+  regression test now covers that handoff.
+- A 700 × 900 tablet viewport had no horizontal overflow; its document and body scroll widths
+  both matched the 700-pixel viewport.
+- The final refreshed flow produced no browser console warnings or errors.
 
 ## Known follow-up
 
@@ -206,23 +220,11 @@ At the current Slice 6 checkpoint:
 
 ## Proposed next slice
 
-Continue the shared-device two-player Skaven turn in three steps:
-
-1. Add the 2-Command React window after an already-revealed Skaven completes Movement, before
-   it takes its Action.
-2. Activate every Noise token. Move it up to 5 by a shortest legal route toward the nearest
-   hero. If it reveals, treat the Noise movement as the revealed group's Movement, resolve
-   placement, offer the 2-Command React interruption behind a role-handoff cover, and then
-   let each new model take 1 Action with no further Movement.
-3. Reinforce by drawing and privately placing two Noise results at available Skaven entries.
-   These do not activate this turn, even if placement reveals them immediately.
-
-Noise revealed outside its own activation never acts immediately. After reinforcement,
-transition to the next Hero turn and reset Command to 2.
-
-Keep solo policy out of this slice: first make the complete round controllable and
-rules-enforced through ordinary commands, then layer AI decisions over the same engine API.
-Guard, card-specific abilities, objectives, and mission resolution remain later slices.
+Build Slice 7, **Solo Skaven AI**, by generating legal placement, activation, movement,
+facing, target, and attack commands through the same rules-enforced command API used by the
+two-player controller. Noise must still follow the forced shortest-route procedure; fresh
+randomness should only break legal ties. Cover blocked and crowded boards deterministically
+in tests while keeping production games intentionally non-replayable.
 
 ## Remaining slice breakdown
 

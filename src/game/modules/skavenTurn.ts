@@ -19,6 +19,7 @@ import { RulesError } from '/src/game/rulesError.js';
 
 interface SkavenTurnView {
   view: HeroGameView;
+  privateNoiseView: import('/src/game/gameState.js').SkavenGameView | null;
   announce(events: readonly GameEvent[]): void;
   showError(message: string): void;
   chooseSkavenMoveDestination(): void;
@@ -41,7 +42,7 @@ interface SkavenTurnGameModuleOptions {
   readonly board: BoardView;
 }
 
-type SelectionMode = 'move' | 'fight' | 'door' | null;
+type SelectionMode = 'move' | 'noise-move' | 'reinforce' | 'fight' | 'door' | null;
 
 const HERO_LABELS: Readonly<Record<HeroId, string>> = Object.freeze({
   gotrek: 'Go',
@@ -74,6 +75,13 @@ const SKAVEN_COMMAND_TYPES = new Set<GameCommand['type']>([
   'fight-hero',
   'interact-door-skaven',
   'end-skaven-activation',
+  'skip-react',
+  'react-fight-skaven',
+  'react-interact-door',
+  'start-noise-activation',
+  'move-noise',
+  'draw-reinforcement-noise',
+  'place-reinforcement-noise',
 ]);
 
 export class SkavenTurnGameModule implements GameModule {
@@ -85,6 +93,8 @@ export class SkavenTurnGameModule implements GameModule {
     'skaven-move-cancelled',
     'skaven-fight-requested',
     'skaven-door-requested',
+    'noise-move-requested',
+    'reinforcement-placement-requested',
   ]);
   readonly #session: GameSession;
   readonly #setup: SkavenTurnView;
@@ -101,8 +111,10 @@ export class SkavenTurnGameModule implements GameModule {
 
   render(): void {
     const view = this.#session.heroView;
-    if (view.phase !== 'skaven') return;
+    if (view.setupStep !== 'complete') return;
     this.#setup.view = view;
+    this.#setup.privateNoiseView =
+      view.skavenTurnStep === 'reinforce' ? this.#session.skavenView : null;
     this.#board.heroes = view.heroes.flatMap(hero =>
       hero.position && hero.facing
         ? [
@@ -111,6 +123,12 @@ export class SkavenTurnGameModule implements GameModule {
               position: hero.position,
               facing: hero.facing,
               woundsRemaining: hero.woundsRemaining,
+              activationStatus:
+                view.activeHeroId === hero.id
+                  ? ('active' as const)
+                  : view.activatedHeroIds.includes(hero.id)
+                    ? ('activated' as const)
+                    : ('ready' as const),
             },
           ]
         : []
@@ -157,6 +175,10 @@ export class SkavenTurnGameModule implements GameModule {
     if (event.type === 'skaven-move-cancelled') return this.#handleMoveCancel();
     if (event.type === 'skaven-fight-requested') return this.#handleFightRequest();
     if (event.type === 'skaven-door-requested') return this.#handleDoorRequest();
+    if (event.type === 'noise-move-requested') return this.#handleNoiseMoveRequest();
+    if (event.type === 'reinforcement-placement-requested') {
+      return this.#handleReinforcementPlacementRequest();
+    }
     if (event.type === 'board-square-selected') return this.#handleBoardSelection(event);
     return false;
   }
@@ -239,12 +261,63 @@ export class SkavenTurnGameModule implements GameModule {
     return true;
   }
 
+  #handleNoiseMoveRequest(): boolean {
+    const view = this.#session.heroView;
+    if (!view.activeNoiseId || view.legalNoiseMovePaths.length === 0) return false;
+    if (view.legalNoiseMovePaths.length === 1) {
+      const events = this.#session.dispatch({
+        type: 'move-noise',
+        noiseId: view.activeNoiseId,
+        path: view.legalNoiseMovePaths[0]!.steps,
+      });
+      this.#setup.announce(events);
+      this.render();
+      return true;
+    }
+    this.#selectionMode = 'noise-move';
+    this.#setup.chooseSkavenMoveDestination();
+    this.#renderLegalSquares(view);
+    return true;
+  }
+
+  #handleReinforcementPlacementRequest(): boolean {
+    if (!this.#session.skavenView.pendingNoise) return false;
+    this.#selectionMode = 'reinforce';
+    this.#board.legalSquares = this.#session.legalNoiseSpawnPositions;
+    this.#board.selectedSquare = null;
+    return true;
+  }
+
   #handleBoardSelection(event: Event): boolean {
     const view = this.#session.heroView;
-    if (!this.#selectionMode || !view.activeSkavenId) return false;
+    if (!this.#selectionMode) return false;
     const position = (event as CustomEvent<Position>).detail;
     try {
       let events: readonly GameEvent[];
+      if (this.#selectionMode === 'reinforce') {
+        events = this.#session.dispatch({ type: 'place-reinforcement-noise', position });
+        this.#clearSelection();
+        this.#setup.announce(events);
+        this.render();
+        return true;
+      }
+      if (this.#selectionMode === 'noise-move') {
+        if (!view.activeNoiseId) return false;
+        const path = view.legalNoiseMovePaths.find(candidate =>
+          this.#samePosition(candidate.destination, position)
+        );
+        if (!path) throw new RulesError('INVALID_NOISE_PATH', 'Choose a highlighted Noise route');
+        events = this.#session.dispatch({
+          type: 'move-noise',
+          noiseId: view.activeNoiseId,
+          path: path.steps,
+        });
+        this.#clearSelection();
+        this.#setup.announce(events);
+        this.render();
+        return true;
+      }
+      if (!view.activeSkavenId) return false;
       if (this.#selectionMode === 'move') {
         const path = view.legalSkavenMovePaths.find(candidate =>
           this.#samePosition(candidate.destination, position)
@@ -291,15 +364,19 @@ export class SkavenTurnGameModule implements GameModule {
     this.#board.legalSquares =
       this.#selectionMode === 'move'
         ? view.legalSkavenMovePaths.map(path => path.destination)
-        : this.#selectionMode === 'fight'
-          ? view.heroes.flatMap(hero =>
-              hero.position && view.legalSkavenFightTargetIds.includes(hero.id)
-                ? [hero.position]
-                : []
-            )
-          : this.#selectionMode === 'door'
-            ? view.legalSkavenDoorInteractions
-            : [];
+        : this.#selectionMode === 'noise-move'
+          ? view.legalNoiseMovePaths.map(path => path.destination)
+          : this.#selectionMode === 'fight'
+            ? view.heroes.flatMap(hero =>
+                hero.position && view.legalSkavenFightTargetIds.includes(hero.id)
+                  ? [hero.position]
+                  : []
+              )
+            : this.#selectionMode === 'door'
+              ? view.legalSkavenDoorInteractions
+              : this.#selectionMode === 'reinforce'
+                ? this.#session.legalNoiseSpawnPositions
+                : [];
     this.#board.selectedSquare = this.#pendingMoveDestination;
   }
 
