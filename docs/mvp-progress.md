@@ -1,6 +1,6 @@
 # MVP Progress
 
-Last updated: 2026-09-14
+Last updated: 2026-09-15
 
 This is the handoff log for [`mvp-plan.md`](mvp-plan.md). Update it when a reviewable
 slice starts or finishes so a future turn can resume without reconstructing project state
@@ -8,11 +8,10 @@ from Git history.
 
 ## Current status
 
-The sixth reviewable slice, **Complete two-player Skaven turn**, is complete in the working
-tree. React now interrupts after enemy Movement, every face-down Noise token follows a
-shortest legal route toward the nearest hero, revealed Noise groups receive Actions without
-additional Movement, and two private reinforcements complete the round before Hero Turn 2
-resets the shared Command pool.
+The seventh reviewable slice, **Solo Skaven AI**, is complete in the working tree. Solo
+Skaven now choose and dispatch ordinary rules-validated commands for revealed placement,
+activation order, shortest-path Movement, facing, attacks, Noise, and reinforcement, pausing
+only when the Hero player must resolve React.
 
 | Slice | Status | Outcome |
 | --- | --- | --- |
@@ -22,7 +21,7 @@ resets the shared Command pool.
 | 4. Hero activation and movement | Complete | Split Movement, two Actions, Dash, Push, legal paths, facing, doors, and phase completion |
 | 5. Revealed Skaven and core combat | Complete | Group placement, Fight actions, dice, wounds, and death |
 | 6. Complete two-player Skaven turn | Complete | Revealed-model activation, React, shortest-route Noise movement, action-only revealed groups, reinforcement, and round transition |
-| 7. Solo Skaven AI | Not started | Legal command generation for placement, Skaven activations, paths, targets, and attacks |
+| 7. Solo Skaven AI | Complete | Legal attack-maximizing placement, nearest-first activations, shortest paths, attacks, Noise, and reinforcement |
 | 8. Reactive combat mechanics | Not started | Guard, rerolls, Ward, death prevention, dice modifiers, and Rat Ogor damage |
 | 9. Active and movement abilities | Not started | Bonus attacks/movement, ranged abilities, charges, Skitter, and Smash |
 | 10. Mission resolution and MVP hardening | Not started | Nests, exit, victory and loss, complete-game scenarios, privacy, UI, and offline verification |
@@ -190,23 +189,43 @@ resets the shared Command pool.
 - Added semantic Noise activation, React, private reinforcement, and round-transition controls,
   including shortest-route board highlighting and shared-device handoffs.
 
+## Completed in slice 7
+
+- Added a solo Skaven command generator that advances the Skaven turn through the same
+  `GameCommand` and `resolveCommand` validation path used by the two-player controller.
+- Ranked revealed-model placements by whether they enable an immediate attack, using fresh
+  randomness only among equally scored legal squares, and centralized solo reveal placement
+  so the policy applies during Hero movement, Noise activation, and reinforcement.
+- Added board-path distance and shortest-approach queries. Revealed models activate nearest to
+  a reachable hero first, follow a randomly selected equally short legal path, face a living
+  target, attack whenever possible, and otherwise open an adjacent closed door or end safely.
+- Automated forced shortest-route Noise movement and private reinforcement draws and placement.
+  The controller never evaluates whether a Noise reveal is advantageous.
+- Kept Hero React as an explicit interruption: the AI stops at each React window and resumes
+  after the Hero player reacts or declines, then runs until the next interruption or Hero turn.
+- Added deterministic tests for attack-maximizing placement, invalid randomness, tied activation
+  order, path-distance approach, and a complete solo Skaven turn across React interruptions.
+- Cached the new compiled AI module and bumped production and development service-worker cache
+  versions.
+
 ## Verification baseline
 
-For the completed Slice 6:
+For the completed Slice 7:
 
 - `pnpm format` passed.
 - `pnpm lint` passed with zero warnings and errors.
 - `pnpm typecheck` passed.
-- `pnpm test` passed all 117 tests.
+- `pnpm test` passed all 125 tests.
 - `pnpm build` completed successfully.
-- A fresh shared-device desktop flow completed private Noise setup, crossed the Skaven
-  handoff, activated all three Noise tokens, reached reinforcement, consumed both blocked
-  entry draws, and exercised the round-transition integration path. The browser pass exposed
-  and fixed a stale Reinforce panel after the state reached Hero Turn 2; a module-level
-  regression test now covers that handoff.
+- A fresh one-hero solo desktop flow kept all three initial identities out of the public and
+  accessible UI, completed every Noise activation and both reinforcements without exposing
+  manual Skaven controls, and reached Hero Turn 2 with Command reset to 2.
+- React pause-and-resume is covered by the complete-solo-turn module regression test; the
+  browser's random flow did not open a React window.
 - A 700 × 900 tablet viewport had no horizontal overflow; its document and body scroll widths
   both matched the 700-pixel viewport.
-- The final refreshed flow produced no browser console warnings or errors.
+- The final refreshed flow produced no browser console errors. It produced only the known
+  `Multiple service workers detected` development warning below.
 
 ## Known follow-up
 
@@ -220,24 +239,11 @@ For the completed Slice 6:
 
 ## Proposed next slice
 
-Build Slice 7, **Solo Skaven AI**, by generating legal placement, activation, movement,
-facing, target, and attack commands through the same rules-enforced command API used by the
-two-player controller. Noise must still follow the forced shortest-route procedure; fresh
-randomness should only break legal ties. Cover blocked and crowded boards deterministically
-in tests while keeping production games intentionally non-replayable.
+Build Slice 8, **Reactive combat mechanics**, beginning with Guard interruption and then
+modelling rerolls, Ward, Snorri's death prevention, contextual Fight modifiers, and Rat Ogor
+damage as explicit immutable choices.
 
 ## Remaining slice breakdown
-
-### Slice 7: Solo Skaven AI
-
-- Place revealed models to maximize immediate attacks and use fresh randomness to break
-  equally scored choices.
-- Choose legal activation order, paths, facing, targets, and attacks through ordinary
-  `GameCommand` values and the same validation path used by the two-player controller.
-- Follow the forced shortest-route Noise procedure without evaluating whether revelation is
-  tactically advantageous; use fresh randomness only to break equally short legal routes.
-- Cover blocked and crowded boards with deterministic test randomness while keeping
-  production games intentionally non-replayable.
 
 ### Slice 8: Reactive combat mechanics
 

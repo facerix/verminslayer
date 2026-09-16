@@ -18,6 +18,7 @@ import type {
 import type { Position } from '/src/game/map.js';
 import type { NoiseResultId } from '/src/game/missionDefinition.js';
 import { RulesError } from '/src/game/rulesError.js';
+import { runSoloSkavenAi } from '/src/game/skavenAi.js';
 
 interface HeroTurnView {
   view: HeroGameView;
@@ -345,58 +346,8 @@ export class HeroTurnGameModule implements GameModule {
 
   #dispatch(command: GameCommand): readonly GameEvent[] {
     const events = [...this.#session.dispatch(command)];
-    if (this.#session.heroView.mode !== 'solo') return Object.freeze(events);
-
-    while (this.#session.heroView.revealedNoise[0]) {
-      const noise = this.#session.heroView.revealedNoise[0];
-      const positions = this.#session.legalSkavenPlacementPositions(noise.id);
-      const randomValue = this.#randomSource.next();
-      if (!Number.isFinite(randomValue) || randomValue < 0 || randomValue >= 1) {
-        throw new RulesError(
-          'INVALID_RANDOM_VALUE',
-          'Random values must be finite numbers from 0 up to 1'
-        );
-      }
-      const position = positions[Math.floor(randomValue * positions.length)];
-      if (!position) {
-        throw new RulesError(
-          'INVALID_SKAVEN_PLACEMENT',
-          'No legal square is available for the revealed Skaven group'
-        );
-      }
-      events.push(
-        ...this.#session.dispatch({
-          type: 'place-revealed-skaven',
-          noiseId: noise.id,
-          position,
-          facing: this.#facingTowardNearestHero(position),
-        })
-      );
-    }
+    events.push(...runSoloSkavenAi(this.#session, this.#randomSource));
     return Object.freeze(events);
-  }
-
-  #facingTowardNearestHero(position: Position): Facing {
-    let target: Position | null = null;
-    let nearestDistance = Number.POSITIVE_INFINITY;
-    for (const hero of this.#session.heroView.heroes) {
-      if (!hero.position || hero.woundsRemaining <= 0) continue;
-      const distance = Math.max(
-        Math.abs(hero.position.row - position.row),
-        Math.abs(hero.position.column - position.column)
-      );
-      if (distance >= nearestDistance) continue;
-      target = hero.position;
-      nearestDistance = distance;
-    }
-    if (!target) return 'north';
-
-    const rowDelta = target.row - position.row;
-    const columnDelta = target.column - position.column;
-    if (Math.abs(rowDelta) >= Math.abs(columnDelta)) {
-      return rowDelta >= 0 ? 'south' : 'north';
-    }
-    return columnDelta >= 0 ? 'east' : 'west';
   }
 
   #samePosition(left: Position, right: Position) {

@@ -8,6 +8,8 @@ import {
   getLegalSkavenMovePaths,
   getLegalNoiseMovePaths,
   getLegalSkavenPlacementPositions,
+  getSkavenApproachPaths,
+  getSkavenDistanceToNearestReachableHero,
   resolveCommand,
 } from '../../src/game/gameState.ts';
 import type { GameState, RandomSource } from '../../src/game/gameState.ts';
@@ -102,6 +104,27 @@ test('the Skaven turn snapshots models that may activate this turn', () => {
   assert.deepEqual(state.skavenActivationIds, ['skaven-1']);
   assert.deepEqual(state.activatedSkavenIds, []);
   assert.equal(state.activeSkavenId, null);
+});
+
+test('Skaven approach paths use board distance to the nearest reachable attack square', () => {
+  let state = skavenTurn();
+  assert.equal(getSkavenDistanceToNearestReachableHero(state, THE_NEST, 'skaven-1'), 2);
+
+  state = resolveCommand(
+    state,
+    { type: 'start-skaven-activation', skavenId: 'skaven-1' },
+    fixedRolls(0)
+  ).state;
+
+  assert.deepEqual(getSkavenApproachPaths(state, THE_NEST, 'skaven-1'), [
+    {
+      destination: { row: 4, column: 3 },
+      steps: [
+        { row: 4, column: 2 },
+        { row: 4, column: 3 },
+      ],
+    },
+  ]);
 });
 
 test('a revealed Skaven takes one Movement, may change facing, and cannot split it', () => {

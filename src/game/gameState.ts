@@ -8,6 +8,7 @@ import { hasLineOfSight } from '/src/game/lineOfSight.js';
 import {
   getReachablePaths,
   getShortestAdvancePaths,
+  getShortestPathDistance,
   isLegalMovementPath,
 } from '/src/game/pathfinding.js';
 import type { MovementContext, ReachablePath } from '/src/game/pathfinding.js';
@@ -673,11 +674,12 @@ const getMovementContext = (
 const getSkavenMovementContext = (
   state: GameState,
   mission: MissionDefinition,
-  skaven: SkavenState
+  skaven: SkavenState,
+  maximumSteps = state.skavenMovementRemaining ?? 0
 ): MovementContext => ({
   board: mission.board,
   start: skaven.position,
-  maximumSteps: state.skavenMovementRemaining ?? 0,
+  maximumSteps,
   closedDoors: state.doors.filter(door => door.status === 'closed').map(door => door.position),
   blockedPositions: [
     ...state.heroes.flatMap(hero => (hero.position ? [hero.position] : [])),
@@ -689,6 +691,43 @@ const getSkavenMovementContext = (
   ],
   exitOpen: state.nests.every(nest => nest.status === 'destroyed'),
 });
+
+const getSkavenApproachGoals = (state: GameState): readonly Position[] =>
+  state.heroes.flatMap(hero =>
+    isHeroEligible(state, hero) && hero.position ? adjacentPositions(hero.position) : []
+  );
+
+export const getSkavenApproachPaths = (
+  state: GameState,
+  mission: MissionDefinition,
+  skavenId: string
+): readonly ReachablePath[] => {
+  assertMissionMatches(state, mission);
+  const skaven = state.skaven.find(candidate => candidate.id === skavenId);
+  if (!skaven) return Object.freeze([]);
+  const maximumSteps =
+    state.activeSkavenId === skaven.id
+      ? (state.skavenMovementRemaining ?? 0)
+      : SKAVEN_DEFINITIONS[skaven.definitionId].stats.move;
+  return getShortestAdvancePaths(
+    getSkavenMovementContext(state, mission, skaven, maximumSteps),
+    getSkavenApproachGoals(state)
+  );
+};
+
+export const getSkavenDistanceToNearestReachableHero = (
+  state: GameState,
+  mission: MissionDefinition,
+  skavenId: string
+): number => {
+  assertMissionMatches(state, mission);
+  const skaven = state.skaven.find(candidate => candidate.id === skavenId);
+  if (!skaven) return Number.POSITIVE_INFINITY;
+  return getShortestPathDistance(
+    getSkavenMovementContext(state, mission, skaven),
+    getSkavenApproachGoals(state)
+  );
+};
 
 const getNoiseMovementContext = (
   state: GameState,

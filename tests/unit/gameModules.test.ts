@@ -548,7 +548,7 @@ test('the Skaven-turn module offers a direct hold when no movement path is open'
   const session = new GameSession(THE_NEST, {
     next: () => drawValues.shift() ?? 0,
   });
-  session.dispatch({ type: 'configure-game', mode: 'solo', heroIds: ['felix'] });
+  session.dispatch({ type: 'configure-game', mode: 'two-player', heroIds: ['felix'] });
   session.dispatch({
     type: 'deploy-hero',
     heroId: 'felix',
@@ -600,10 +600,19 @@ test('the Skaven-turn module offers a direct hold when no movement path is open'
     { type: 'end-hero-phase', confirmed: true },
   ] as const) {
     heroModule.handleEvent(new CustomEvent('game-command', { detail: command }));
+    while (session.heroView.revealedNoise[0]) {
+      const noise = session.heroView.revealedNoise[0];
+      session.dispatch({
+        type: 'place-revealed-skaven',
+        noiseId: noise.id,
+        position: session.legalSkavenPlacementPositions(noise.id)[0]!,
+        facing: 'east',
+      });
+    }
   }
 
   assert.equal(session.heroView.skavenTurnStep, 'activate-skaven');
-  const module = new SkavenTurnGameModule({ session, setup, board });
+  const module = new SkavenTurnGameModule({ session, setup, board, randomSource });
   module.render();
   const skavenId = session.heroView.skavenActivationIds[0]!;
   assert.equal(
@@ -668,7 +677,7 @@ test('the Skaven-turn module renders the next Hero turn after reinforcement', ()
 
   const setup = new SetupViewSpy();
   const board = new BoardViewSpy();
-  const module = new SkavenTurnGameModule({ session, setup, board });
+  const module = new SkavenTurnGameModule({ session, setup, board, randomSource });
   module.render();
   for (const noiseId of session.heroView.noiseActivationIds) {
     module.handleEvent(
@@ -699,4 +708,52 @@ test('the Skaven-turn module renders the next Hero turn after reinforcement', ()
   assert.equal(setup.view.phase, 'hero');
   assert.equal(setup.view.round, 2);
   assert.equal(setup.view.command, 2);
+});
+
+test('solo mode generates legal Skaven commands until React or the next Hero turn', () => {
+  const session = new GameSession(THE_NEST, { next: () => 0 });
+  completeSoloSetup(session);
+  const setup = new SetupViewSpy();
+  const board = new BoardViewSpy();
+  const heroModule = new HeroTurnGameModule({
+    session,
+    setup,
+    board,
+    randomSource: { next: () => 0 },
+  });
+  const skavenModule = new SkavenTurnGameModule({
+    session,
+    setup,
+    board,
+    randomSource: { next: () => 0 },
+  });
+
+  heroModule.handleEvent(
+    new CustomEvent('game-command', {
+      detail: { type: 'start-hero-activation', heroId: 'gotrek' },
+    })
+  );
+  heroModule.handleEvent(
+    new CustomEvent('game-command', {
+      detail: { type: 'end-hero-activation', heroId: 'gotrek', confirmed: true },
+    })
+  );
+  heroModule.handleEvent(
+    new CustomEvent('game-command', {
+      detail: { type: 'end-hero-phase', confirmed: true },
+    })
+  );
+
+  let reactWindows = 0;
+  while (session.heroView.phase === 'skaven') {
+    assert.ok(session.heroView.pendingReact, 'the solo AI must stop only for a Hero React choice');
+    reactWindows++;
+    assert.ok(reactWindows < 20, 'the AI should complete the Skaven turn');
+    skavenModule.handleEvent(new CustomEvent('game-command', { detail: { type: 'skip-react' } }));
+  }
+
+  assert.equal(session.heroView.phase, 'hero');
+  assert.equal(session.heroView.round, 2);
+  assert.equal(session.heroView.command, 2);
+  assert.equal(setup.view.phase, 'hero');
 });

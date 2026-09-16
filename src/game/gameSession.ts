@@ -6,6 +6,8 @@ import {
   getLegalSkavenDoorInteractions,
   getLegalSkavenFightTargetIds,
   getLegalSkavenMovePaths,
+  getSkavenApproachPaths,
+  getSkavenDistanceToNearestReachableHero,
   getLegalSkavenPlacementPositions,
   projectHeroView,
   projectSkavenView,
@@ -73,6 +75,14 @@ export class GameSession {
 
   get legalSkavenFightTargetIds() {
     return getLegalSkavenFightTargetIds(this.#state);
+  }
+
+  skavenApproachPaths(skavenId: string) {
+    return getSkavenApproachPaths(this.#state, this.#mission, skavenId);
+  }
+
+  skavenDistanceToNearestReachableHero(skavenId: string): number {
+    return getSkavenDistanceToNearestReachableHero(this.#state, this.#mission, skavenId);
   }
 
   dispatch(command: GameCommand): readonly GameEvent[] {

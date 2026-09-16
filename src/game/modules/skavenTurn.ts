@@ -12,10 +12,17 @@ import {
 import type { HeroId } from '/src/game/entities.js';
 import type { GameModule } from '/src/game/gameModule.js';
 import type { GameSession } from '/src/game/gameSession.js';
-import type { Facing, GameCommand, GameEvent, HeroGameView } from '/src/game/gameState.js';
+import type {
+  Facing,
+  GameCommand,
+  GameEvent,
+  HeroGameView,
+  RandomSource,
+} from '/src/game/gameState.js';
 import type { Position } from '/src/game/map.js';
 import type { NoiseResultId } from '/src/game/missionDefinition.js';
 import { RulesError } from '/src/game/rulesError.js';
+import { runSoloSkavenAi } from '/src/game/skavenAi.js';
 
 interface SkavenTurnView {
   view: HeroGameView;
@@ -40,6 +47,7 @@ interface SkavenTurnGameModuleOptions {
   readonly session: GameSession;
   readonly setup: SkavenTurnView;
   readonly board: BoardView;
+  readonly randomSource: RandomSource;
 }
 
 type SelectionMode = 'move' | 'noise-move' | 'reinforce' | 'fight' | 'door' | null;
@@ -99,14 +107,16 @@ export class SkavenTurnGameModule implements GameModule {
   readonly #session: GameSession;
   readonly #setup: SkavenTurnView;
   readonly #board: BoardView;
+  readonly #randomSource: RandomSource;
   #selectionMode: SelectionMode = null;
   #pendingMovePath: readonly Position[] | null = null;
   #pendingMoveDestination: Position | null = null;
 
-  constructor({ session, setup, board }: SkavenTurnGameModuleOptions) {
+  constructor({ session, setup, board, randomSource }: SkavenTurnGameModuleOptions) {
     this.#session = session;
     this.#setup = setup;
     this.#board = board;
+    this.#randomSource = randomSource;
   }
 
   render(): void {
@@ -187,7 +197,7 @@ export class SkavenTurnGameModule implements GameModule {
     const command = (event as CustomEvent<GameCommand>).detail;
     if (!SKAVEN_COMMAND_TYPES.has(command.type)) return false;
     try {
-      const events = this.#session.dispatch(command);
+      const events = this.#dispatch(command);
       this.#clearSelection();
       this.#setup.announce(events);
       this.render();
@@ -382,6 +392,12 @@ export class SkavenTurnGameModule implements GameModule {
 
   #samePosition(left: Position, right: Position) {
     return left.row === right.row && left.column === right.column;
+  }
+
+  #dispatch(command: GameCommand): readonly GameEvent[] {
+    const events = [...this.#session.dispatch(command)];
+    events.push(...runSoloSkavenAi(this.#session, this.#randomSource));
+    return Object.freeze(events);
   }
 
   #clearSelection() {

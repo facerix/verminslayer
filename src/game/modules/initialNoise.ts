@@ -13,6 +13,7 @@ import type {
 import type { Position } from '/src/game/map.js';
 import type { NoiseResultId } from '/src/game/missionDefinition.js';
 import { RulesError } from '/src/game/rulesError.js';
+import { runSoloSkavenAi } from '/src/game/skavenAi.js';
 
 interface InitialNoiseView {
   view: HeroGameView;
@@ -190,6 +191,7 @@ export class InitialNoiseGameModule implements GameModule {
         throw new RulesError('INVALID_NOISE_SPAWN', 'No legal Skaven spawn is available');
       }
       events.push(...this.#session.dispatch({ type: 'place-initial-noise', position }));
+      events.push(...runSoloSkavenAi(this.#session, this.#randomSource));
     }
     return events;
   }

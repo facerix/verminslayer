@@ -25,6 +25,7 @@ const AppCacheResources = Object.freeze({
     '/src/game/missions/theNest.js',
     '/src/game/missions/registry.js',
     '/src/game/rulesError.js',
+    '/src/game/skavenAi.js',
     '/src/game/skavenPlacement.js',
   ],
   static: [],

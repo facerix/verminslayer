@@ -77,6 +77,18 @@ export const getReachablePaths = (context: MovementContext): readonly ReachableP
   return Object.freeze(paths);
 };
 
+export const getShortestPathDistance = (
+  context: MovementContext,
+  goals: readonly Position[]
+): number => {
+  const goalKeys = new Set(goals.map(positionKey));
+  const maximumSteps = context.board.width * context.board.height;
+  const path = getReachablePaths({ ...context, maximumSteps }).find(candidate =>
+    goalKeys.has(positionKey(candidate.destination))
+  );
+  return path?.steps.length ?? Number.POSITIVE_INFINITY;
+};
+
 export const isLegalMovementPath = (
   context: MovementContext,
   steps: readonly Position[]
