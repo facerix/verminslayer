@@ -594,6 +594,14 @@ export const createInitialGameState = (mission: MissionDefinition): GameState =>
     noiseActionIds: [],
   });
 
+/** Rebuild the immutable engine boundary around a JSON-deserialized saved state. */
+export const restoreGameState = (state: GameState, mission: MissionDefinition): GameState => {
+  assertMissionMatches(state, mission);
+  const restored = freezeState(state);
+  projectHeroView(restored);
+  return restored;
+};
+
 export const getLegalDeploymentPositions = (
   state: GameState,
   mission: MissionDefinition
@@ -996,9 +1004,8 @@ export const getLegalSkavenPlacementPositions = (
   ];
   const blockedPositions = [
     ...state.heroes.flatMap(hero => (hero.position ? [hero.position] : [])),
-    ...state.skaven
-      .filter(skaven => skaven.sourceNoiseId !== noise.id)
-      .map(skaven => skaven.position),
+    // Spawning groups spill through occupied Skaven, but unavailableDestinations still
+    // prevents two models from finishing on the same square.
     ...state.concealedNoise.map(candidate => candidate.position),
     ...state.revealedNoise
       .filter(candidate => candidate.id !== noise.id)

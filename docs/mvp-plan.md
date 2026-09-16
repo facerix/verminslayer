@@ -11,9 +11,11 @@ V1 is complete when players can:
 - Deploy heroes, complete turns, move, change facing, fight, interact, guard, and use every listed ability.
 - Control Skaven manually in two-player mode or face simple aggressive AI in solo mode.
 - Resolve noise, doors, nests, wounds, death, the round limit, and both victory conditions.
+- Resume the single in-progress game after a browser reload and explicitly quit it to start over.
 - Play on desktop or tablet with mouse or touch, including offline after the application has loaded once.
 
-V1 deliberately excludes saved games, persistence, undo, phone-specific pan/zoom, additional missions, and permissive state-editing tools.
+V1 deliberately excludes multiple save slots, save selection, undo, phone-specific pan/zoom,
+additional missions, and permissive state-editing tools.
 
 ## Gameplay and Rules
 
@@ -55,7 +57,7 @@ V1 deliberately excludes saved games, persistence, undo, phone-specific pan/zoom
 - Skaven turns:
   - There is no Reveal action or voluntary conversion. Noise remains concealed until line of sight or adjacency forces it to reveal.
   - First activate every Skaven already revealed on the board once. In two-player mode, the Skaven player chooses activation order, movement, facing, targets, and optional attacks.
-  - A revealed result places its models on the token square and then the nearest empty reachable passable squares by movement distance; the Skaven controller chooses among equal candidates. “Nothing” removes the token.
+  - A revealed result places its models on the token square and then the nearest empty reachable passable squares by movement distance; occupied Skaven may be traversed during this placement search but remain illegal destinations. The Skaven controller chooses among equal candidates. “Nothing” removes the token.
   - Each normally activated Skaven gets one Movement and 1 Action. Fight is the ordinary action; a Clanrat may use Door instead, while a Rat Ogor may Smash a door during Movement.
   - Then activate each remaining Noise token once. It moves up to five spaces by a shortest legal route toward the nearest hero and reveals immediately upon entering hero line of sight or an adjacent square.
   - Noise movement counts as the Movement of every model it reveals. Once the group is placed, offer the normal React window; then each model may take 1 Action but may not Move again that turn.
@@ -86,7 +88,9 @@ V1 deliberately excludes saved games, persistence, undo, phone-specific pan/zoom
 - Inject `RandomSource` into combat, bag draws, and AI choices. Production uses browser randomness; tests use fixed sequences.
 - Expose separate hero/public and Skaven views of internal state. Concealed identities must be absent—not merely visually hidden—from hero-side Canvas and DOM view models.
 - Have solo AI generate ordinary `GameCommand` values through the same validation path as human input.
-- Keep the v1 session in memory. Do not write game state to `DataStore` or `localStorage`; leave `DataRecord` unchanged until persistence is intentionally designed.
+- Persist the complete immutable `GameState` after each successful command transaction in a
+  versioned `DataRecord`. Keep at most one saved game, restore it on startup, and require
+  confirmation before quitting and clearing it.
 - Keep mission rules, pathfinding, LOS, combat, abilities, AI, Canvas geometry, and UI orchestration separated so later missions and persistence do not require rewriting the engine.
 
 ## Canvas and HTML Experience
@@ -110,6 +114,8 @@ V1 deliberately excludes saved games, persistence, undo, phone-specific pan/zoom
   - Every victory/loss condition for rosters of 1 through 5 heroes.
   - AI commands remaining legal under blocked paths and crowded boards, with deterministic test randomness despite fresh production randomness.
   - Transactionality: rejected commands leave the prior state unchanged and produce visible errors.
+  - Persistence: successful commands replace the single save, reload restores private and public
+    engine state, rejected commands do not replace it, and quitting clears it.
 - Add engine-level integration scenarios for a complete solo round, complete two-player round, Hero Turn 8 timeout, hero elimination, and successful nest destruction plus exit.
 - Manually verify at `http://localhost:8140`:
   - Mouse and touch interactions at desktop and tablet widths.

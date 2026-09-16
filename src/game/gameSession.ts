@@ -12,6 +12,7 @@ import {
   projectHeroView,
   projectSkavenView,
   resolveCommand,
+  restoreGameState,
 } from '/src/game/gameState.js';
 import type {
   Facing,
@@ -33,12 +34,25 @@ import type { MissionDefinition } from '/src/game/missionDefinition.js';
 export class GameSession {
   readonly #mission: MissionDefinition;
   readonly #randomSource: RandomSource;
+  readonly #onStateChange: (state: GameState) => void;
   #state: GameState;
 
-  constructor(mission: MissionDefinition, randomSource: RandomSource) {
+  constructor(
+    mission: MissionDefinition,
+    randomSource: RandomSource,
+    initialState?: GameState,
+    onStateChange: (state: GameState) => void = () => {}
+  ) {
     this.#mission = mission;
     this.#randomSource = randomSource;
-    this.#state = createInitialGameState(mission);
+    this.#onStateChange = onStateChange;
+    this.#state = initialState
+      ? restoreGameState(initialState, mission)
+      : createInitialGameState(mission);
+  }
+
+  get state(): GameState {
+    return this.#state;
   }
 
   get heroView(): HeroGameView {
@@ -110,6 +124,7 @@ export class GameSession {
       events.push(...result.events);
     }
 
+    this.#onStateChange(this.#state);
     return Object.freeze(events);
   }
 

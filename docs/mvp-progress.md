@@ -8,10 +8,10 @@ from Git history.
 
 ## Current status
 
-The seventh reviewable slice, **Solo Skaven AI**, is complete in the working tree. Solo
-Skaven now choose and dispatch ordinary rules-validated commands for revealed placement,
-activation order, shortest-path Movement, facing, attacks, Noise, and reinforcement, pausing
-only when the Hero player must resolve React.
+The seventh reviewable slice, **Solo Skaven AI**, and the inter-slice **single-game
+persistence foundation** are complete in the working tree. Successful game transactions now
+replace one versioned local save, browser reload restores the complete immutable engine state,
+and a confirmed Quit game action clears the save and starts over.
 
 | Slice | Status | Outcome |
 | --- | --- | --- |
@@ -22,6 +22,7 @@ only when the Hero player must resolve React.
 | 5. Revealed Skaven and core combat | Complete | Group placement, Fight actions, dice, wounds, and death |
 | 6. Complete two-player Skaven turn | Complete | Revealed-model activation, React, shortest-route Noise movement, action-only revealed groups, reinforcement, and round transition |
 | 7. Solo Skaven AI | Complete | Legal attack-maximizing placement, nearest-first activations, shortest paths, attacks, Noise, and reinforcement |
+| Persistence foundation | Complete | One versioned local save, automatic resume, private-state-safe handoff, and confirmed quit/clear |
 | 8. Reactive combat mechanics | Not started | Guard, rerolls, Ward, death prevention, dice modifiers, and Rat Ogor damage |
 | 9. Active and movement abilities | Not started | Bonus attacks/movement, ranged abilities, charges, Skitter, and Smash |
 | 10. Mission resolution and MVP hardening | Not started | Nests, exit, victory and loss, complete-game scenarios, privacy, UI, and offline verification |
@@ -143,8 +144,9 @@ only when the Hero player must resolve React.
   the token square and each later model uses the nearest reachable empty distance tier, with
   every equal-distance choice exposed to the controller in two-player mode and resolved with
   injected randomness in solo mode.
-- Accounted for walls, rubble, water, closed doors, the locked exit, heroes, Skaven, and
-  other noise during placement while allowing Skaven to occupy intact nests.
+- Accounted for walls, rubble, water, closed doors, the locked exit, heroes, Skaven
+  destinations, and other noise during placement while allowing spawning groups to spill
+  through occupied Skaven and occupy intact nests.
 - Added adjacent hero Fight actions through a separate opposed-roll module. Every printed
   Fight die uses the injected random source; highest dice determine a hero win, Skaven win,
   or no-effect tie.
@@ -208,15 +210,40 @@ only when the Hero player must resolve React.
 - Cached the new compiled AI module and bumped production and development service-worker cache
   versions.
 
+## Completed between slices 7 and 8: persistence foundation
+
+- Replaced the legacy open-ended `DataRecord` shape with an explicit versioned record containing
+  the complete immutable `GameState`; no board state rides on an index signature.
+- Enforced one saved game at most. Every successful `GameSession` transaction replaces the saved
+  snapshot, while rejected rules commands never notify or overwrite the store.
+- Restored JSON-deserialized state through the engine's immutable boundary before rendering, so
+  a reload resumes setup, Hero, Skaven, reaction, and pending private-draw state.
+- Restarted the solo controller before the first render when a saved game contains unfinished
+  automatic Skaven work.
+- Kept resumed two-player initial Noise identities behind a fresh pass-device handoff instead of
+  revealing a pending private result immediately after reload.
+- Added a persistent **Quit game** affordance with explicit confirmation. Confirming clears the
+  save before reloading into a fresh roster-selection screen.
+- Made the entry point repair the new header control when a stale cached HTML shell briefly loads
+  alongside the new script during a service-worker update.
+- Added the storage and UUID modules to the offline application shell and bumped both service
+  worker cache versions.
+
 ## Verification baseline
 
-For the completed Slice 7:
+For the completed Slice 7 plus the persistence foundation:
 
 - `pnpm format` passed.
 - `pnpm lint` passed with zero warnings and errors.
 - `pnpm typecheck` passed.
-- `pnpm test` passed all 125 tests.
+- `pnpm test` passed all 129 tests.
 - `pnpm build` completed successfully.
+- A browser-started game resumed at the same Hero deployment state after a full reload, with
+  the selected roster and Quit game control intact.
+- Quit game opened an explicit destructive confirmation; save replacement and clearing are
+  covered by the `DataStore` regression tests.
+- A clean resumed browser load produced no console warnings or errors.
+- The captured crowded-spawn save replayed through the solo controller into Hero Turn 2.
 - A fresh one-hero solo desktop flow kept all three initial identities out of the public and
   accessible UI, completed every Noise activation and both reinforcements without exposing
   manual Skaven controls, and reached Hero Turn 2 with Command reset to 2.
@@ -229,6 +256,8 @@ For the completed Slice 7:
 
 ## Known follow-up
 
+- Define what happens to excess models when heroes or Noise completely seal a revealed
+  group's placement area even after Skaven spillover is considered.
 - The development browser still reports `Multiple service workers detected`. This is a
   warning rather than an error; inspect the service-worker lifecycle when that work is in
   scope.

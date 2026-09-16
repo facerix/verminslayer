@@ -74,6 +74,25 @@ header#main-head {
   }
 }
 
+#quit-game {
+  min-height: 2.25rem;
+  padding: 0.4rem 0.75rem;
+  border: 1px solid #7a6552;
+  border-radius: 0.35rem;
+  color: #e6ddce;
+  background: #231d19;
+  cursor: pointer;
+  font: inherit;
+  font-weight: 700;
+}
+
+#quit-game:hover,
+#quit-game:focus-visible {
+  border-color: var(--accent-color);
+  outline: 2px solid var(--accent-color);
+  outline-offset: 2px;
+}
+
 h1,
 h2,
 h3,

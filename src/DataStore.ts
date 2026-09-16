@@ -1,176 +1,125 @@
-// singleton class to manage the user's data
-
+import type { GameState } from '/src/game/gameState.js';
 import { v4WithTimestamp } from '/src/uuid.js';
 
-export type TurnPhase = 'hero' | 'skaven';
+const STORAGE_KEY = 'games';
 
-/**
- * One tracked hero in a saved game.
- */
-export interface HeroState {
-  /** Hero card name, e.g. "GOTREK GURNISSON". */
-  name: string;
-  /** Current wounds remaining (starts at the card's Wounds value). */
-  wounds: number;
-  /** Once-per-mission abilities already spent this game. */
-  spentAbilities?: string[];
-}
+export const SAVE_SCHEMA_VERSION = 1 as const;
 
-/**
- * A saved Verminslayer game. The store keys these under localStorage `games`.
- *
- * TODO(rylee): firm up this shape as the tracker UI takes form — the board
- * state (model positions, door open/closed, noise token placement) is not
- * modelled yet and currently rides on the `[key: string]: unknown` index
- * signature.
- */
+/** The single resumable Verminslayer game stored in localStorage. */
 export interface DataRecord {
-  id: string;
-  /** Mission being played, e.g. "THE NEST". */
-  mission?: string;
-  /** Current round number (1-based). */
-  round?: number;
-  /** Whose turn it is. */
-  phase?: TurnPhase;
-  /** Command pool available to the heroes this round (Hero turn grants 3). */
-  command?: number;
-  /** Number of Nest markers destroyed (mission-specific). */
-  nestsDestroyed?: number;
-  heroes?: HeroState[];
-  /** Free-form notes the player jots during play. */
-  notes?: string;
-  [key: string]: unknown;
+  readonly id: string;
+  readonly schemaVersion: typeof SAVE_SCHEMA_VERSION;
+  readonly savedAt: string;
+  readonly state: GameState;
 }
 
-export type ChangeType = 'init' | 'add' | 'update' | 'delete';
+export type ChangeType = 'init' | 'save' | 'clear';
 
 export interface DataStoreChangeDetail {
-  items: DataRecord[];
-  changeType: ChangeType;
-  affectedRecords: DataRecord | DataRecord[] | string[];
+  readonly savedGame: DataRecord | null;
+  readonly changeType: ChangeType;
 }
 
-let instance: DataStore | null = null;
+const isObject = (value: unknown): value is Record<string, unknown> =>
+  typeof value === 'object' && value !== null;
 
-class DataStore extends EventTarget {
-  #items: DataRecord[] = [];
-  #itemsById: Map<string, DataRecord> = new Map();
+const isDataRecord = (value: unknown): value is DataRecord =>
+  isObject(value) &&
+  typeof value.id === 'string' &&
+  value.schemaVersion === SAVE_SCHEMA_VERSION &&
+  typeof value.savedAt === 'string' &&
+  isObject(value.state) &&
+  typeof value.state.missionId === 'string';
 
-  constructor() {
-    if (instance) {
-      throw new Error('New instance cannot be created!!');
-    }
+/**
+ * Singleton-compatible localStorage boundary for the one resumable game.
+ *
+ * The storage dependency is injectable so its one-save invariant can be tested without a
+ * browser. Application code uses the default singleton exported below.
+ */
+export class DataStore extends EventTarget {
+  readonly #storage: Storage | null;
+  #savedGame: DataRecord | null = null;
+
+  constructor(storage?: Storage) {
     super();
-
-    // Singleton: cache `this` so a second `new DataStore()` throws above.
-    // eslint-disable-next-line @typescript-eslint/no-this-alias
-    instance = this;
+    this.#storage = storage ?? null;
   }
 
-  #loadRecordsFromJson(json: string): DataRecord[] {
+  init(): void {
+    const json = this.#getStorage().getItem(STORAGE_KEY);
+    if (json === null) {
+      this.#persist();
+      this.#emitChangeEvent('init');
+      return;
+    }
+
     try {
       const records: unknown = JSON.parse(json);
       if (!Array.isArray(records)) {
-        console.warn('[DataStore] Expected array JSON, falling back to empty list.');
-        return [];
+        throw new TypeError('Expected the saved-games value to be an array');
       }
-      records.forEach((item: DataRecord, index: number) => {
-        if (!item.id) {
-          records[index].id = v4WithTimestamp();
-        }
-      });
-      return records as DataRecord[];
+      if (records.length > 1) {
+        console.warn('[DataStore] Multiple saved games found; keeping only the newest record.');
+      }
+      const record = records[0];
+      if (record !== undefined && !isDataRecord(record)) {
+        throw new TypeError('The saved game has an unsupported or invalid format');
+      }
+      this.#savedGame = record ?? null;
+      this.#persist();
     } catch (error) {
-      console.warn('[DataStore] Failed to parse stored JSON, resetting items.', error);
-      try {
-        window.localStorage.setItem('games', '[]');
-      } catch (storageError) {
-        console.warn('[DataStore] Failed to reset stored items.', storageError);
-      }
-      return [];
+      console.warn('[DataStore] Saved game could not be restored and was cleared.', error);
+      this.#savedGame = null;
+      this.#persist();
     }
+
+    this.#emitChangeEvent('init');
   }
 
-  async init(): Promise<void> {
-    let savedItemsJson = window.localStorage.getItem('games');
-    if (!savedItemsJson) {
-      savedItemsJson = '[]';
-      window.localStorage.setItem('games', savedItemsJson);
-    }
-    this.#items = this.#loadRecordsFromJson(savedItemsJson);
-    this.#reindex();
-
-    setTimeout(() => {
-      this.#emitChangeEvent('init', ['*']);
-    }, 0);
+  get savedGame(): DataRecord | null {
+    return this.#savedGame;
   }
 
-  import(jsonData: string): void {
-    const newItems = this.#loadRecordsFromJson(jsonData);
-    Array.prototype.unshift.apply(this.#items, newItems);
-    this.#reindex();
-
-    setTimeout(() => {
-      this.#emitChangeEvent('init', ['*']);
-    }, 0);
-  }
-
-  #saveItems(): void {
-    window.localStorage.setItem('games', JSON.stringify(this.#items));
-  }
-
-  #emitChangeEvent(
-    changeType: ChangeType,
-    affectedRecords: DataStoreChangeDetail['affectedRecords']
-  ): void {
-    const changeEvent = new CustomEvent<DataStoreChangeDetail>('change', {
-      detail: {
-        items: this.#items,
-        changeType,
-        affectedRecords,
-      },
+  saveGame(state: GameState): void {
+    this.#savedGame = Object.freeze({
+      id: this.#savedGame?.id ?? v4WithTimestamp(),
+      schemaVersion: SAVE_SCHEMA_VERSION,
+      savedAt: new Date().toISOString(),
+      state,
     });
-    this.dispatchEvent(changeEvent);
+    this.#persist();
+    this.#emitChangeEvent('save');
   }
 
-  #reindex(): void {
-    this.#itemsById = new Map();
-    this.#items.forEach(item => {
-      this.#itemsById.set(item.id, item);
-    });
-    this.#saveItems();
+  clearSavedGame(): void {
+    if (this.#savedGame === null && this.#getStorage().getItem(STORAGE_KEY) === '[]') return;
+    this.#savedGame = null;
+    this.#persist();
+    this.#emitChangeEvent('clear');
   }
 
-  get items(): DataRecord[] {
-    return this.#items;
+  #persist(): void {
+    this.#getStorage().setItem(
+      STORAGE_KEY,
+      JSON.stringify(this.#savedGame ? [this.#savedGame] : [])
+    );
   }
 
-  getItemById(id: string): DataRecord | undefined {
-    return this.#itemsById.get(id);
-  }
-
-  addItem(record: DataRecord): void {
-    record.id = v4WithTimestamp();
-    this.#items.unshift(record);
-    this.#reindex();
-    this.#emitChangeEvent('add', record);
-  }
-
-  updateItem(record: DataRecord): void {
-    const index = this.#items.findIndex(rec => rec.id === record.id);
-    if (index > -1) {
-      this.#items[index] = record;
-      this.#reindex();
-      this.#emitChangeEvent('update', record);
+  #getStorage(): Storage {
+    if (this.#storage) return this.#storage;
+    if (typeof window === 'undefined') {
+      throw new Error('The default DataStore requires browser localStorage');
     }
+    return window.localStorage;
   }
 
-  deleteItem(id: string): void {
-    if (this.#itemsById.has(id)) {
-      this.#items = this.#items.filter(r => r.id !== id);
-      this.#reindex();
-      this.#emitChangeEvent('delete', [id]);
-    }
+  #emitChangeEvent(changeType: ChangeType): void {
+    this.dispatchEvent(
+      new CustomEvent<DataStoreChangeDetail>('change', {
+        detail: { savedGame: this.#savedGame, changeType },
+      })
+    );
   }
 }
 

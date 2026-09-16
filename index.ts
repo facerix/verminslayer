@@ -3,10 +3,13 @@ import '/components/GameBoard.js';
 import '/components/GameSetup.js';
 import '/components/ConfirmationModal.js';
 import '/components/UpdateNotification.js';
+import DataStore from '/src/DataStore.js';
+import { h } from '/src/domUtils.js';
 import { createGameEventDelegate } from '/src/game/gameModule.js';
 import type { GameModule } from '/src/game/gameModule.js';
 import { GameSession } from '/src/game/gameSession.js';
 import { browserRandomSource } from '/src/game/gameState.js';
+import { runSoloSkavenAi } from '/src/game/skavenAi.js';
 import { SetupGameModule } from '/src/game/modules/setup.js';
 import { InitialNoiseGameModule } from '/src/game/modules/initialNoise.js';
 import { HeroTurnGameModule } from '/src/game/modules/heroTurn.js';
@@ -15,9 +18,40 @@ import { THE_NEST } from '/src/game/missions/theNest.js';
 
 const board = document.querySelector('game-board');
 const setup = document.querySelector('game-setup');
-if (!board || !setup) throw new Error('The game board and setup controls are required');
+const confirmationModal = document.querySelector('confirmation-modal');
+const header = document.querySelector<HTMLElement>('#main-head');
+if (!board || !setup || !confirmationModal || !header) {
+  throw new Error('The game board, setup controls, and application shell are required');
+}
+const quitGame =
+  document.querySelector<HTMLButtonElement>('#quit-game') ??
+  h('button', { id: 'quit-game', type: 'button', hidden: true, textContent: 'Quit game' });
+if (!quitGame.isConnected) header.append(quitGame);
 
-const session = new GameSession(THE_NEST, browserRandomSource);
+DataStore.init();
+const savedGame = DataStore.savedGame;
+const session = new GameSession(THE_NEST, browserRandomSource, savedGame?.state, state => {
+  DataStore.saveGame(state);
+  quitGame.hidden = false;
+});
+quitGame.hidden = session.heroView.setupStep === 'select-roster';
+
+quitGame.addEventListener('click', () => {
+  const cleanup = () => {
+    confirmationModal.removeEventListener('confirm', confirm);
+    confirmationModal.removeEventListener('cancel', cancel);
+  };
+  const confirm = () => {
+    cleanup();
+    DataStore.clearSavedGame();
+    window.location.reload();
+  };
+  const cancel = () => cleanup();
+  confirmationModal.addEventListener('confirm', confirm);
+  confirmationModal.addEventListener('cancel', cancel);
+  confirmationModal.showModal('Quit this game? All saved progress will be deleted.');
+});
+
 const gameModules: readonly GameModule[] = Object.freeze([
   new SetupGameModule({ session, board, setup }),
   new InitialNoiseGameModule({ session, board, setup, randomSource: browserRandomSource }),
@@ -27,7 +61,9 @@ const gameModules: readonly GameModule[] = Object.freeze([
 const delegateGameEvent = createGameEventDelegate(gameModules);
 const gameEventTypes = new Set(gameModules.flatMap(module => module.eventTypes));
 for (const eventType of gameEventTypes) document.addEventListener(eventType, delegateGameEvent);
+const resumedEvents = savedGame ? runSoloSkavenAi(session, browserRandomSource) : [];
 for (const module of gameModules) module.render();
+if (resumedEvents.length > 0) setup.announce(resumedEvents);
 
 const whenLoaded = customElements.whenDefined('update-notification');
 

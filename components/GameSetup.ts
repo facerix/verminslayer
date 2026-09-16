@@ -326,6 +326,7 @@ export class GameSetup extends HTMLElement {
   #error = '';
   #announcement = '';
   #moveSelection: MoveSelection | null = null;
+  #privateNoiseHandoffComplete = false;
   #skavenHandoffComplete = false;
   #reactHandoffComplete = false;
   #reactHandoffKey: string | null = null;
@@ -628,7 +629,10 @@ export class GameSetup extends HTMLElement {
   }
 
   #renderInitialNoise(): HTMLElement {
-    if (this.#privateNoiseView?.pendingNoise) {
+    if (
+      this.#privateNoiseView?.pendingNoise &&
+      (this.#view?.mode !== 'two-player' || this.#privateNoiseHandoffComplete)
+    ) {
       const result = this.#privateNoiseView.pendingNoise;
       return h('div', { className: 'complete' }, [
         h('div', {}, [
@@ -653,7 +657,14 @@ export class GameSetup extends HTMLElement {
         type: 'button',
         textContent: 'I am the Skaven player',
       });
-      button.addEventListener('click', () => this.#dispatchCommand({ type: 'draw-initial-noise' }));
+      button.addEventListener('click', () => {
+        this.#privateNoiseHandoffComplete = true;
+        if (this.#privateNoiseView?.pendingNoise) {
+          this.#render();
+        } else {
+          this.#dispatchCommand({ type: 'draw-initial-noise' });
+        }
+      });
       return h('div', { className: 'handoff' }, [
         h('p', { className: 'eyebrow', textContent: 'Pass the device' }),
         h('h2', { textContent: 'Skaven player only' }),

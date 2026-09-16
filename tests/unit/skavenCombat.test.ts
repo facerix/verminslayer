@@ -218,6 +218,63 @@ test('a three-model group can expand through its own models from a dead-end toke
   assert.deepEqual(resolved.revealedNoise, []);
 });
 
+test('a revealed group spills through unrelated Skaven when leaving a crowded spawn', () => {
+  const base = heroTurnWithRevealedGroup('three-clanrats');
+  let state: GameState = {
+    ...base,
+    heroes: Object.freeze([
+      Object.freeze({ ...base.heroes[0]!, position: Object.freeze({ row: 11, column: 1 }) }),
+    ]),
+    revealedNoise: Object.freeze([
+      Object.freeze({
+        ...base.revealedNoise[0]!,
+        position: Object.freeze({ row: 10, column: 0 }),
+      }),
+    ]),
+    skaven: Object.freeze([
+      Object.freeze({
+        id: 'skaven-1',
+        sourceNoiseId: 'older-noise',
+        definitionId: 'clanrat' as const,
+        woundsRemaining: 1,
+        position: Object.freeze({ row: 10, column: 1 }),
+        facing: 'west' as const,
+      }),
+    ]),
+    nextSkavenSequence: 2,
+  };
+
+  state = resolveCommand(
+    state,
+    {
+      type: 'place-revealed-skaven',
+      noiseId: 'noise-1',
+      position: { row: 10, column: 0 },
+      facing: 'east',
+    },
+    fixedRolls(0)
+  ).state;
+
+  assert.deepEqual(getLegalSkavenPlacementPositions(state, THE_NEST, 'noise-1'), [
+    { row: 9, column: 1 },
+  ]);
+
+  state = resolveCommand(
+    state,
+    {
+      type: 'place-revealed-skaven',
+      noiseId: 'noise-1',
+      position: { row: 9, column: 1 },
+      facing: 'north',
+    },
+    fixedRolls(0)
+  ).state;
+
+  assert.deepEqual(getLegalSkavenPlacementPositions(state, THE_NEST, 'noise-1'), [
+    { row: 8, column: 1 },
+  ]);
+});
+
 test('revealed groups interrupt Hero actions until every model is placed', () => {
   const state = heroTurnWithRevealedGroup();
 

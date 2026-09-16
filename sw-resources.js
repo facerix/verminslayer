@@ -7,6 +7,7 @@ const AppCacheResources = Object.freeze({
     '/components/GameBoard.js',
     '/components/GameSetup.js',
     '/components/ConfirmationModal.js',
+    '/src/DataStore.js',
     '/src/canvas/boardGeometry.js',
     '/src/canvas/boardRenderer.js',
     '/src/game/map.js',
@@ -27,6 +28,7 @@ const AppCacheResources = Object.freeze({
     '/src/game/rulesError.js',
     '/src/game/skavenAi.js',
     '/src/game/skavenPlacement.js',
+    '/src/uuid.js',
   ],
   static: [],
 });
