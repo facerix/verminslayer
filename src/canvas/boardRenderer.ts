@@ -45,11 +45,11 @@ export interface BoardPresentation {
 
 const TILE_COLORS = Object.freeze({
   floor: '#3b342d',
-  wall: '#171310',
+  wall: '#101714',
   door: '#9a6938',
-  water: '#244854',
+  water: '#628364',
   rubble: '#6b6259',
-  deployment: '#435d3c',
+  deployment: '#d9a849',
   spawn: '#612a2d',
   nest: '#70402f',
   exit: '#171310',
@@ -98,6 +98,7 @@ const drawMarker = (
     context.closePath();
     context.stroke();
   } else if (tile.kind === 'deployment') {
+    context.strokeStyle = '#f6e849';
     context.beginPath();
     context.arc(0, 0, squareSize * 0.24, 0, Math.PI * 2);
     context.stroke();
@@ -134,7 +135,7 @@ const drawMarker = (
       context.fill();
     }
   } else if (tile.kind === 'water') {
-    context.strokeStyle = '#75a7b4';
+    context.strokeStyle = '#8ea282';
     context.lineWidth = Math.max(1, squareSize * 0.035);
     for (const offset of [-0.13, 0.13]) {
       context.beginPath();
