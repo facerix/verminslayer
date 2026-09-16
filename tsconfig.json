@@ -19,6 +19,7 @@
     },
 
     "sourceMap": true,
+    "inlineSources": true,
     "skipLibCheck": true
   },
   "include": ["src/**/*", "components/**/*", "index.ts", "about.ts"],

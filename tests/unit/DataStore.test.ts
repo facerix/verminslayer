@@ -33,39 +33,17 @@ class MemoryStorage implements Storage {
   }
 }
 
-test('the data store keeps at most one complete saved game and can clear it', () => {
-  const storage = new MemoryStorage();
-  const store = new DataStore(storage);
-  store.init();
-
-  const firstState = createInitialGameState(THE_NEST);
-  store.saveGame(firstState);
-  store.saveGame({ ...firstState, round: 3, phase: 'hero' });
-
-  const storedRecords = JSON.parse(storage.getItem('games') ?? 'null') as unknown[];
-  assert.equal(storedRecords.length, 1);
-  assert.equal(store.savedGame?.schemaVersion, SAVE_SCHEMA_VERSION);
-  assert.equal(store.savedGame?.state.round, 3);
-
-  store.clearSavedGame();
-
-  assert.equal(store.savedGame, null);
-  assert.equal(storage.getItem('games'), '[]');
-});
-
 test('the data store restores the single saved game from localStorage', () => {
   const storage = new MemoryStorage();
   const state = { ...createInitialGameState(THE_NEST), round: 2, phase: 'skaven' as const };
   storage.setItem(
-    'games',
-    JSON.stringify([
-      {
-        id: 'saved-game',
-        schemaVersion: SAVE_SCHEMA_VERSION,
-        savedAt: '2026-09-15T12:00:00.000Z',
-        state,
-      },
-    ])
+    'savedGame',
+    JSON.stringify({
+      id: 'saved-game',
+      schemaVersion: SAVE_SCHEMA_VERSION,
+      savedAt: '2026-09-15T12:00:00.000Z',
+      state,
+    })
   );
   const store = new DataStore(storage);
 

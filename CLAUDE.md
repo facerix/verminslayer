@@ -74,7 +74,7 @@ models' Movement; when revelation occurs during the Noise activation, each model
 
 ### Data model
 
-`DataStore` persists saved games under the localStorage key `games`. The `DataRecord`
+`DataStore` persists current saved game under the localStorage key `savedGame`. The `DataRecord`
 interface in `src/DataStore.ts` carries `mission`, `round`, `phase`, `command`,
 `nestsDestroyed`, `heroes[]`, and `notes`. Board-level state (positions, door state,
 token placement) is not modelled yet — extend the interface rather than leaning on its

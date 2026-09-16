@@ -1,7 +1,9 @@
 import type { GameState } from '/src/game/gameState.js';
 import { v4WithTimestamp } from '/src/uuid.js';
 
-const STORAGE_KEY = 'games';
+const SCHEMA = {
+  SAVED_GAME: 'savedGame'
+};
 
 export const SAVE_SCHEMA_VERSION = 1 as const;
 
@@ -47,7 +49,8 @@ export class DataStore extends EventTarget {
   }
 
   init(): void {
-    const json = this.#getStorage().getItem(STORAGE_KEY);
+    // we store invididual items at the localStorage root rather than nesting them under a single app-named key
+    const json = this.#getStorage().getItem(SCHEMA.SAVED_GAME);
     if (json === null) {
       this.#persist();
       this.#emitChangeEvent('init');
@@ -55,18 +58,11 @@ export class DataStore extends EventTarget {
     }
 
     try {
-      const records: unknown = JSON.parse(json);
-      if (!Array.isArray(records)) {
-        throw new TypeError('Expected the saved-games value to be an array');
-      }
-      if (records.length > 1) {
-        console.warn('[DataStore] Multiple saved games found; keeping only the newest record.');
-      }
-      const record = records[0];
-      if (record !== undefined && !isDataRecord(record)) {
+      const savedGame: GameState = JSON.parse(json);
+      if (savedGame !== undefined && !isDataRecord(savedGame)) {
         throw new TypeError('The saved game has an unsupported or invalid format');
       }
-      this.#savedGame = record ?? null;
+      this.#savedGame = savedGame ?? null;
       this.#persist();
     } catch (error) {
       console.warn('[DataStore] Saved game could not be restored and was cleared.', error);
@@ -93,17 +89,21 @@ export class DataStore extends EventTarget {
   }
 
   clearSavedGame(): void {
-    if (this.#savedGame === null && this.#getStorage().getItem(STORAGE_KEY) === '[]') return;
+    if (this.#savedGame === null && !this.#getStorage().getItem(SCHEMA.SAVED_GAME)) return;
     this.#savedGame = null;
     this.#persist();
     this.#emitChangeEvent('clear');
   }
 
   #persist(): void {
-    this.#getStorage().setItem(
-      STORAGE_KEY,
-      JSON.stringify(this.#savedGame ? [this.#savedGame] : [])
-    );
+    if (this.#savedGame) {
+      this.#getStorage().setItem(
+        SCHEMA.SAVED_GAME,
+        JSON.stringify(this.#savedGame)
+      );
+    } else {
+      this.#getStorage().removeItem(SCHEMA.SAVED_GAME);
+    }
   }
 
   #getStorage(): Storage {

@@ -24,7 +24,7 @@ Current playtest rules specification: [`docs/rules.md`](docs/rules.md). In brief
   Felix, Snorri, Ulrika, Maximilian, Malakai; Skaven: Clanrat, Gutter Runner, Rat Ogor).
 - **Missions** (e.g. "THE NEST") define roster, noise bag, map, round limit, and victory.
 
-**Data model**: `DataStore` persists saved games under localStorage key `games`. The
+**Data model**: `DataStore` persists the current save game under localStorage key `savedGame`. The
 `DataRecord` interface in `src/DataStore.ts` holds `mission`, `round`, `phase`,
 `command`, `nestsDestroyed`, `heroes[]`, `notes`. Board-level state is not modelled yet —
 extend the interface, don't lean on its index signature.
