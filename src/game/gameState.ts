@@ -95,6 +95,11 @@ export interface ReactDoorOption {
   readonly position: Position;
 }
 
+/** A shortest Noise route may spend the activation handling a door instead of moving. */
+export interface NoiseMovePath extends ReachablePath {
+  readonly doorPosition?: Position;
+}
+
 export interface GameState {
   readonly missionId: string;
   readonly setupStep: SetupStep;
@@ -236,7 +241,12 @@ export type GameCommand =
       readonly position: Position;
     }
   | { readonly type: 'start-noise-activation'; readonly noiseId: string }
-  | { readonly type: 'move-noise'; readonly noiseId: string; readonly path: readonly Position[] }
+  | {
+      readonly type: 'move-noise';
+      readonly noiseId: string;
+      readonly path: readonly Position[];
+      readonly doorPosition?: Position;
+    }
   | { readonly type: 'draw-reinforcement-noise' }
   | { readonly type: 'place-reinforcement-noise'; readonly position: Position };
 
@@ -303,6 +313,7 @@ export type GameEvent =
     }
   | { readonly type: 'door-opened'; readonly position: Position }
   | { readonly type: 'door-closed'; readonly position: Position }
+  | { readonly type: 'door-destroyed'; readonly position: Position }
   | { readonly type: 'hero-activation-ended'; readonly heroId: HeroId }
   | { readonly type: 'hero-phase-ended'; readonly round: number }
   | { readonly type: 'skaven-turn-started'; readonly round: number }
@@ -426,7 +437,7 @@ export interface HeroGameView {
   readonly legalSkavenMovePaths: readonly ReachablePath[];
   readonly legalSkavenDoorInteractions: readonly Position[];
   readonly legalSkavenFightTargetIds: readonly HeroId[];
-  readonly legalNoiseMovePaths: readonly ReachablePath[];
+  readonly legalNoiseMovePaths: readonly NoiseMovePath[];
   readonly legalReactFightOptions: readonly ReactFightOption[];
   readonly legalReactDoorOptions: readonly ReactDoorOption[];
   readonly legalMovePaths: readonly ReachablePath[];
@@ -786,12 +797,13 @@ const isNoiseVisibleAt = (state: GameState, mission: MissionDefinition, position
 export const getLegalNoiseMovePaths = (
   state: GameState,
   mission: MissionDefinition
-): readonly ReachablePath[] => {
+): readonly NoiseMovePath[] => {
   assertMissionMatches(state, mission);
   if (
     state.phase !== 'skaven' ||
     state.skavenTurnStep !== 'activate-noise' ||
     !state.activeNoiseId ||
+    state.activatedNoiseIds.includes(state.activeNoiseId) ||
     state.pendingReact ||
     state.revealedNoise.length > 0 ||
     state.noiseActionIds.length > 0
@@ -804,42 +816,39 @@ export const getLegalNoiseMovePaths = (
     isHeroEligible(state, hero) && hero.position ? adjacentPositions(hero.position) : []
   );
   const movementContext = getNoiseMovementContext(state, mission, noise);
-  let paths = getShortestAdvancePaths(movementContext, goals);
-  if (paths.length === 0 && movementContext.closedDoors.length > 0) {
-    paths = getShortestAdvancePaths({ ...movementContext, closedDoors: [] }, goals).map(path => {
-      let legalStepCount = 0;
-      while (
-        legalStepCount < path.steps.length &&
-        isLegalMovementPath(movementContext, path.steps.slice(0, legalStepCount + 1))
-      ) {
-        legalStepCount++;
-      }
-      return Object.freeze({
-        destination: freezePosition(path.steps[legalStepCount - 1] ?? noise.position),
-        steps: Object.freeze(path.steps.slice(0, legalStepCount).map(freezePosition)),
-      });
-    });
-  }
+  const paths = getShortestAdvancePaths({ ...movementContext, closedDoors: [] }, goals);
   if (paths.length === 0) {
     return Object.freeze([
       Object.freeze({ destination: freezePosition(noise.position), steps: Object.freeze([]) }),
     ]);
   }
-  const unique = new Map<string, ReachablePath>();
+  const unique = new Map<string, NoiseMovePath>();
   for (const path of paths) {
-    const revealIndex = path.steps.findIndex(position =>
+    const doorIndex = path.steps.findIndex(position =>
+      movementContext.closedDoors.some(door => samePosition(door, position))
+    );
+    const blockingDoor = doorIndex >= 0 ? path.steps[doorIndex] : undefined;
+    const doorPosition =
+      blockingDoor && isAdjacent(noise.position, blockingDoor) ? blockingDoor : undefined;
+    const legalSteps = doorPosition
+      ? []
+      : doorIndex >= 0
+        ? path.steps.slice(0, doorIndex)
+        : path.steps;
+    const revealIndex = legalSteps.findIndex(position =>
       isNoiseVisibleAt(state, mission, position)
     );
-    const steps = revealIndex >= 0 ? path.steps.slice(0, revealIndex + 1) : path.steps;
+    const steps = revealIndex >= 0 ? legalSteps.slice(0, revealIndex + 1) : legalSteps;
     const destination = steps.at(-1) ?? noise.position;
-    const key = steps
-      .map(position => `${String(position.row)},${String(position.column)}`)
-      .join(';');
+    const key =
+      steps.map(position => `${String(position.row)},${String(position.column)}`).join(';') +
+      (doorPosition ? `;door:${doorPosition.row},${doorPosition.column}` : '');
     unique.set(
       key,
       Object.freeze({
         destination: freezePosition(destination),
         steps: Object.freeze(steps.map(freezePosition)),
+        ...(doorPosition ? { doorPosition: freezePosition(doorPosition) } : {}),
       })
     );
   }
@@ -1749,14 +1758,19 @@ const placeRevealedSkaven = (
   }
 
   const skavenModels = [...state.skaven, skaven];
+  const resolvedActiveNoise =
+    resolved && state.skavenTurnStep === 'activate-noise' && state.activeNoiseId === noise.id;
+  // Door handling consumes the activation before any forced-reveal placement or React.
+  const doorActivationEnded =
+    state.activeNoiseId === noise.id && state.activatedNoiseIds.includes(noise.id);
   const noiseActionIds =
-    resolved && state.skavenTurnStep === 'activate-noise' && state.activeNoiseId === noise.id
+    resolvedActiveNoise && !doorActivationEnded
       ? skavenModels
           .filter(candidate => candidate.sourceNoiseId === noise.id)
           .map(candidate => candidate.id)
       : state.noiseActionIds;
   const pendingReact: ReactWindow | null =
-    noiseActionIds !== state.noiseActionIds && state.command >= 2
+    resolvedActiveNoise && state.command >= 2
       ? Object.freeze({ source: 'noise', sourceId: noise.id })
       : state.pendingReact;
   if (pendingReact && pendingReact !== state.pendingReact) {
@@ -1774,7 +1788,15 @@ const placeRevealedSkaven = (
         ),
     noiseActionIds,
     pendingReact,
+    activatedSkavenIds: doorActivationEnded
+      ? [...state.activatedSkavenIds, skavenId]
+      : state.activatedSkavenIds,
   };
+  if (resolvedActiveNoise && doorActivationEnded && !pendingReact) {
+    const finished = finishNoiseActivation(nextState, noise.id);
+    nextState = finished.state;
+    events.push(...finished.events);
+  }
   if (
     resolved &&
     state.skavenTurnStep === 'reinforce' &&
@@ -2654,7 +2676,6 @@ const reactInteractDoor = (
   const commandRemaining = state.command - 2;
   let workingState: GameState = {
     ...state,
-    pendingReact: null,
     command: commandRemaining,
     doors: state.doors.map(candidate =>
       samePosition(candidate.position, door.position)
@@ -2662,7 +2683,7 @@ const reactInteractDoor = (
         : candidate
     ),
   };
-  const events: GameEvent[] = [
+  let events: GameEvent[] = [
     Object.freeze({
       type: nextStatus === 'open' ? ('door-opened' as const) : ('door-closed' as const),
       position: freezePosition(door.position),
@@ -2674,6 +2695,9 @@ const reactInteractDoor = (
       commandRemaining,
     }),
   ];
+  const finished = finishReact(workingState, events);
+  workingState = finished.state;
+  events = [...finished.events];
   if (nextStatus === 'open') {
     const reveals = revealVisibleNoise(workingState, mission);
     workingState = reveals.state;
@@ -2704,6 +2728,7 @@ const finishNoiseActivation = (state: GameState, noiseId: string): CommandResult
       ...state,
       activeNoiseId: null,
       activatedNoiseIds,
+      noiseActionIds: [],
       skavenTurnStep: complete ? 'reinforce' : 'activate-noise',
     }),
     events: Object.freeze([
@@ -2759,9 +2784,42 @@ const moveNoise = (
   const path = legal.find(
     candidate =>
       candidate.steps.length === command.path.length &&
-      candidate.steps.every((step, index) => samePosition(step, command.path[index]!))
+      candidate.steps.every((step, index) => samePosition(step, command.path[index]!)) &&
+      (candidate.doorPosition
+        ? command.doorPosition && samePosition(candidate.doorPosition, command.doorPosition)
+        : !command.doorPosition)
   );
   if (!path) throw new RulesError('INVALID_NOISE_PATH', 'Noise must follow a shortest legal route');
+
+  const doorPosition = path.doorPosition;
+  if (doorPosition) {
+    if (noise.resultId === 'nothing') return finishNoiseActivation(state, noise.id);
+    const status = noise.resultId === 'rat-ogor' ? 'destroyed' : 'open';
+    const changedState: GameState = {
+      ...state,
+      doors: state.doors.map(door =>
+        samePosition(door.position, doorPosition) ? { ...door, status } : door
+      ),
+      activatedNoiseIds: [...state.activatedNoiseIds, noise.id],
+    };
+    const reveals = revealVisibleNoise(changedState, mission);
+    const events: GameEvent[] = [
+      Object.freeze({
+        type: status === 'destroyed' ? 'door-destroyed' : 'door-opened',
+        position: freezePosition(doorPosition),
+      }),
+      ...reveals.events,
+    ];
+    // Keep the active group only until its placement and normal React window resolve.
+    if (reveals.state.revealedNoise.some(candidate => candidate.id === noise.id)) {
+      return Object.freeze({ state: freezeState(reveals.state), events: Object.freeze(events) });
+    }
+    const finished = finishNoiseActivation(reveals.state, noise.id);
+    return Object.freeze({
+      state: finished.state,
+      events: Object.freeze([...events, ...finished.events]),
+    });
+  }
 
   let from = noise.position;
   let revealed = false;

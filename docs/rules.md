@@ -18,14 +18,29 @@ physical Verminslayer board game. It is deliberately a living document; see
    open or close an adjacent door. A Rat Ogor's Smash lets it destroy a closed door during
    movement.
 2. **Activate Noise.** Activate each Noise token once. It moves up to 5 spaces by a shortest
-   legal route toward the nearest hero. If it reveals during this movement, the resulting
-   Skaven may each take 1 Action but may not Move again this turn.
+   legal route toward the nearest hero, or handles a blocking closed door if it begins
+   adjacent to that door (see **Noise** below). Opening or smashing a door ends its
+   activation. If it reveals during movement, the resulting Skaven may each take 1 Action
+   but may not Move again this turn.
 3. **Reinforce.** Draw 2 Noise results and place them at Skaven entries. They do not activate
    this turn, even if they reveal immediately.
 
 ### NOISE
 
 - A Noise token is face-down and hidden from the Hero player. It has Move 5 and no facing.
+- Noise moves toward the nearest hero by a shortest legal route. For route planning, treat
+  closed doors as passable, even if an open detour exists. During movement, stop before
+  entering the first closed door on the chosen route; Noise cannot move through a closed
+  door. If it begins its activation adjacent to that blocking door, resolve its hidden result:
+
+  - **Clanrats / Gutter Runner:** Open the door and end the Noise activation.
+  - **Rat Ogor:** **SMASH** the door (destroy it) and end the Noise activation.
+  - **Nothing:** Cannot open or smash doors; leave the door closed and end the Noise
+    activation.
+
+  Noise that moves up to a blocking closed door must wait until its next activation to
+  open or smash it. A destroyed door cannot be closed again.
+
 - There is no Reveal action and Noise cannot be revealed voluntarily. It remains Noise until
   contact forces it to reveal.
 - A Noise token immediately reveals when it enters a square in any hero's line of sight or
@@ -41,7 +56,9 @@ physical Verminslayer board game. It is deliberately a living document; see
 - A Noise token's movement counts as the Movement of every Skaven it reveals. If it reveals
   during its own activation, finish placing the group, then its Movement is complete. After
   the normal React window, each newly revealed model may take 1 Action but may not Move again
-  that turn.
+  that turn. Opening or smashing a door is an exception: if the board change forces that
+  Noise to reveal, place its models and resolve the normal React window, but those models
+  may neither Move nor take Actions that turn; their activation has ended.
 - If Noise reveals outside its own activation, the resulting Skaven do not act immediately;
   they receive their next normal activation during a later Skaven turn.
 - Noise tokens cannot share a square. A drawn result is consumed without placing a token
@@ -223,7 +240,11 @@ disappears when the next Hero turn resets the pool to 2.
 Move by a shortest legal route toward the nearest hero. Reveal immediately upon entering a
 hero's line of sight or an adjacent square. Movement already spent as Noise is the Movement
 of the Skaven it reveals; those models may each take 1 Action but may not Move again that
-turn.
+turn. Plan routes through closed doors, but stop before the first closed door. If Noise
+begins its activation adjacent to that blocking door, Clanrats or a Gutter Runner open it,
+a Rat Ogor **SMASHES** it (destroying it), and Nothing
+cannot open it. The Noise activation ends there, even if opening or smashing forces it to
+reveal; its models get no further Movement or Actions that turn.
 
 ----------
 

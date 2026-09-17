@@ -9,6 +9,7 @@ import type { CombatResult, GameEvent } from '../../src/game/gameState.ts';
 class TestElement extends EventTarget {
   tagName: string;
   className = '';
+  id = '';
   textContent = '';
   children: TestElement[] = [];
   shadowRoot: TestElement | null = null;
@@ -27,6 +28,10 @@ class TestElement extends EventTarget {
   append(...children: TestElement[]) {
     this.children.push(...children);
   }
+  setAttribute() {}
+  getBoundingClientRect() {
+    return { width: 0, height: 0 };
+  }
   replaceChildren(...children: TestElement[]) {
     this.children = children;
   }
@@ -35,7 +40,9 @@ class TestElement extends EventTarget {
       if (
         selector.startsWith('.')
           ? child.className.split(' ').includes(selector.slice(1))
-          : child.tagName === selector
+          : selector.startsWith('#')
+            ? child.id === selector.slice(1)
+            : child.tagName === selector
       )
         return child;
       const found = child.querySelector(selector);
@@ -49,8 +56,16 @@ Object.defineProperties(globalThis, {
   HTMLElement: { value: TestElement, configurable: true },
   document: { value: { createElement: (tag: string) => new TestElement(tag) }, configurable: true },
   customElements: { value: { define() {} }, configurable: true },
+  ResizeObserver: {
+    value: class {
+      observe() {}
+      disconnect() {}
+    },
+    configurable: true,
+  },
 });
 const { GameSetup } = await import('../../components/GameSetup.ts');
+const { GameBoard } = await import('../../components/GameBoard.ts');
 
 const older: CombatResult = {
   heroId: 'gotrek',
@@ -91,4 +106,28 @@ test('announcing a fight immediately updates the live region and emits a public 
   assert.equal(highlights.length, 1);
   setup.announce([{ type: 'noise-drawn' } as GameEvent]);
   assert.equal(highlights.length, 1, 'private draws do not overwrite public results');
+});
+
+test('a smashed door is announced without exposing an unrevealed Noise identity', () => {
+  const setup = new GameSetup();
+  setup.connectedCallback();
+  setup.announce([
+    { type: 'door-destroyed', position: { row: 6, column: 4 } },
+    { type: 'noise-activation-ended', noiseId: 'noise-1' },
+    { type: 'reinforcement-started' },
+  ]);
+  const announcement = setup.shadowRoot!.querySelector('.announcement')!.textContent!;
+  assert.match(announcement, /Door SMASHED at row 7, column 5/);
+  assert.doesNotMatch(announcement, /Rat Ogor/);
+});
+
+test('the board description distinguishes opened doors from doors that cannot be closed again', () => {
+  const board = new GameBoard();
+  board.doors = [
+    { position: { row: 6, column: 4 }, status: 'open' },
+    { position: { row: 14, column: 6 }, status: 'destroyed' },
+  ];
+  const description = board.shadowRoot!.querySelector('.description')!.textContent!;
+  assert.match(description, /Open doors: row 7, column 5\./);
+  assert.match(description, /Destroyed doors: row 15, column 7.*cannot be closed/i);
 });

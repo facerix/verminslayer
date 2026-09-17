@@ -254,8 +254,33 @@ For the completed Slice 7 plus the persistence foundation:
 - The final refreshed flow produced no browser console errors. It produced only the known
   `Multiple service workers detected` development warning below.
 
+## Noise door refinement
+
+- Noise now plans shortest routes with closed doors treated as passable, even when an open
+  detour exists, and stops movement before the first closed door on its chosen route.
+- Noise beginning adjacent to that door spends its activation opening it for Clanrats /
+  Gutter Runner, destroying it for Rat Ogor, or leaving it closed for Nothing. Arriving
+  during movement requires waiting until the next activation to handle the door.
+- Door changes immediately reveal every Noise newly in hero line of sight or adjacency.
+  The active group retains its normal React window after placement, but gets no Movement
+  or Actions. This timing survives save-and-resume during placement or React.
+- Two-player controls resolve a single route directly or highlight distinct blocking doors
+  among tied routes. Solo AI uses the same engine options and resumes into reinforcement
+  after React. Door reactions also finish the spent Noise activation.
+- Smashed doors have a broken board marker and are described as destroyed and impossible
+  to close. Both service-worker cache versions advance to `0.1.7` for offline updates.
+- Validation: changed sources formatted; lint, typecheck, all 160 tests, and build pass.
+  Browser scenarios on an isolated local origin confirmed Rat Ogor revelation followed by
+  React and reinforcement, a selected tied door being smashed while Noise stays hidden,
+  and solo Clanrat opening/revelation followed by React and Hero Turn 2 without attacks.
+  No console errors occurred; the existing development service-worker warnings remain
+  tracked below.
+
 ## Known follow-up
 
+- Refresh the data-model briefs in `AGENTS.md` and `CLAUDE.md`: they still describe an
+  unmodelled board and the old `DataRecord` fields, while the prototype now saves a typed
+  `GameState` envelope including board state.
 - Define what happens to excess models when heroes or Noise completely seal a revealed
   group's placement area even after Skaven spillover is considered.
 - The development browser still reports `Multiple service workers detected`. This is a

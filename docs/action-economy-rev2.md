@@ -40,10 +40,16 @@ A revealed Skaven gets:
 
 Its Action is usually Fight. A Clanrat can instead spend it opening a Door. A Rat Ogor doesn't even need that because Smash lets it burst through one.
 
-Noise begins with **Movement only**. It moves up to 5 by a shortest legal route toward the
+Noise normally has **Movement only**. It moves up to 5 by a shortest legal route toward the
 nearest hero and reveals when it enters hero line of sight or adjacency. If it reveals during
 that activation, the movement already spent becomes the revealed models' Movement; each may
 then take one Action but cannot Move again that turn. Noise never reveals voluntarily.
+
+The door exception is specified in [`rules.md`](rules.md): plan routes through closed doors
+even when an open detour exists, but stop before the first closed door. If Noise begins
+adjacent to that blocking door, Clanrats / Gutter Runner open it, Rat Ogor Noise destroys it,
+and Nothing cannot open it. This ends the activation, even if the door change forces that
+Noise to reveal; those models get no Movement or Actions that turn.
 
 So both players understand the same basic concept:
 

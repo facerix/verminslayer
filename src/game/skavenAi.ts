@@ -211,7 +211,12 @@ export const getNextSoloSkavenCommand = (
     }
     if (view.activeNoiseId) {
       const path = chooseRandom(view.legalNoiseMovePaths, randomSource);
-      return { type: 'move-noise', noiseId: view.activeNoiseId, path: path.steps };
+      return {
+        type: 'move-noise',
+        noiseId: view.activeNoiseId,
+        path: path.steps,
+        doorPosition: path.doorPosition,
+      };
     }
     const remainingNoiseIds = view.noiseActivationIds.filter(
       id => !view.activatedNoiseIds.includes(id) && view.noiseTokens.some(noise => noise.id === id)

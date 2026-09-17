@@ -209,11 +209,17 @@ export class GameBoard extends HTMLElement {
           )
           .join('; ')}.`
       : '';
-    const openDoors = this.#doors.filter(door => door.status !== 'closed');
+    const openDoors = this.#doors.filter(door => door.status === 'open');
+    const destroyedDoors = this.#doors.filter(door => door.status === 'destroyed');
     const doors = openDoors.length
       ? ` Open doors: ${openDoors
           .map(door => `row ${door.position.row + 1}, column ${door.position.column + 1}`)
           .join('; ')}.`
+      : '';
+    const destroyed = destroyedDoors.length
+      ? ` Destroyed doors: ${destroyedDoors
+          .map(door => `row ${door.position.row + 1}, column ${door.position.column + 1}`)
+          .join('; ')}. Destroyed doors cannot be closed.`
       : '';
     const selectedSquare = this.#selectedSquare
       ? ` Selected destination: row ${this.#selectedSquare.row + 1}, column ${this.#selectedSquare.column + 1}.`
@@ -225,6 +231,7 @@ export class GameBoard extends HTMLElement {
       reveals +
       skaven +
       doors +
+      destroyed +
       selectedSquare;
   }
 }

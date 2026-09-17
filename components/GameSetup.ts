@@ -449,7 +449,10 @@ export class GameSetup extends HTMLElement {
     const reversedEvents = [...events].reverse();
     const reveal = reversedEvents.find(event => event.type === 'noise-revealed');
     const door = reversedEvents.find(
-      event => event.type === 'door-opened' || event.type === 'door-closed'
+      event =>
+        event.type === 'door-opened' ||
+        event.type === 'door-closed' ||
+        event.type === 'door-destroyed'
     );
     const fight = reversedEvents.find(event => event.type === 'fight-rolled');
     const placement = reversedEvents.find(event => event.type === 'skaven-placed');
@@ -470,6 +473,8 @@ export class GameSetup extends HTMLElement {
       this.#announcement = `Door opened at row ${door.position.row + 1}, column ${door.position.column + 1}.`;
     } else if (door?.type === 'door-closed') {
       this.#announcement = `Door closed at row ${door.position.row + 1}, column ${door.position.column + 1}.`;
+    } else if (door?.type === 'door-destroyed') {
+      this.#announcement = `Door SMASHED at row ${door.position.row + 1}, column ${door.position.column + 1}.`;
     } else if (latest?.type === 'hero-deployed') {
       const heroName = HERO_DEFINITIONS[latest.heroId].name;
       this.#announcement = `${heroName} deployed at row ${latest.position.row + 1}, column ${latest.position.column + 1}, facing ${latest.facing}.`;
@@ -1233,18 +1238,18 @@ export class GameSetup extends HTMLElement {
         this.#moveSelection?.stage === 'destination' && this.#moveSelection.faction === 'skaven';
       const move = h('button', {
         type: 'button',
-        textContent: choosing ? 'Choosing route…' : 'Move Noise toward nearest hero',
+        textContent: choosing ? 'Choosing route…' : 'Resolve Noise route',
         disabled: choosing,
       });
       move.addEventListener('click', () => this.#dispatchUiEvent('noise-move-requested'));
       return h('div', { className: 'activation-card' }, [
         h('p', { className: 'eyebrow', textContent: `Round ${this.#view.round} · Activate Noise` }),
-        h('h2', { textContent: 'Noise movement' }),
+        h('h2', { textContent: 'Noise activation' }),
         h('p', {
           className: 'help',
           textContent: choosing
-            ? 'Choose one highlighted shortest-route destination.'
-            : `Noise at row ${active.position.row + 1}, column ${active.position.column + 1} must move up to 5 toward the nearest hero.`,
+            ? 'Choose a highlighted destination or blocking door on a shortest route.'
+            : `Noise at row ${active.position.row + 1}, column ${active.position.column + 1} moves up to 5 toward the nearest hero, stopping before closed doors. If it begins adjacent to a blocking door, Clanrats or a Gutter Runner open it, a Rat Ogor smashes it, and Nothing leaves it closed. Handling a door ends the activation.`,
         }),
         move,
       ]);

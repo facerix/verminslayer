@@ -281,6 +281,7 @@ export class SkavenTurnGameModule implements GameModule {
         type: 'move-noise',
         noiseId: view.activeNoiseId,
         path: view.legalNoiseMovePaths[0]!.steps,
+        doorPosition: view.legalNoiseMovePaths[0]!.doorPosition,
       });
       this.#setup.announce(events);
       this.render();
@@ -316,13 +317,14 @@ export class SkavenTurnGameModule implements GameModule {
       if (this.#selectionMode === 'noise-move') {
         if (!view.activeNoiseId) return false;
         const path = view.legalNoiseMovePaths.find(candidate =>
-          this.#samePosition(candidate.destination, position)
+          this.#samePosition(candidate.doorPosition ?? candidate.destination, position)
         );
         if (!path) throw new RulesError('INVALID_NOISE_PATH', 'Choose a highlighted Noise route');
         events = this.#session.dispatch({
           type: 'move-noise',
           noiseId: view.activeNoiseId,
           path: path.steps,
+          doorPosition: path.doorPosition,
         });
         this.#clearSelection();
         this.#setup.announce(events);
@@ -377,7 +379,7 @@ export class SkavenTurnGameModule implements GameModule {
       this.#selectionMode === 'move'
         ? view.legalSkavenMovePaths.map(path => path.destination)
         : this.#selectionMode === 'noise-move'
-          ? view.legalNoiseMovePaths.map(path => path.destination)
+          ? view.legalNoiseMovePaths.map(path => path.doorPosition ?? path.destination)
           : this.#selectionMode === 'fight'
             ? view.heroes.flatMap(hero =>
                 hero.position && view.legalSkavenFightTargetIds.includes(hero.id)

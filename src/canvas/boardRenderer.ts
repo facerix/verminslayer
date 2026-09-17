@@ -77,7 +77,12 @@ const drawMarker = (
 
   if (tile.kind === 'door') {
     context.beginPath();
-    if (doorStatus === 'open' || doorStatus === 'destroyed') {
+    if (doorStatus === 'destroyed') {
+      context.moveTo(-squareSize * 0.3, -squareSize * 0.28);
+      context.lineTo(-squareSize * 0.08, -squareSize * 0.18);
+      context.moveTo(squareSize * 0.08, -squareSize * 0.32);
+      context.lineTo(squareSize * 0.3, -squareSize * 0.28);
+    } else if (doorStatus === 'open') {
       context.moveTo(-squareSize * 0.3, -squareSize * 0.28);
       context.lineTo(squareSize * 0.3, -squareSize * 0.28);
     } else {
