@@ -1,3 +1,4 @@
+import { latestImportantEvent } from '/src/game/eventPresentation.js';
 import { h } from '/src/domUtils.js';
 import {
   ALL_HERO_IDS,
@@ -222,9 +223,37 @@ const STYLES = `
   .combat-log {
     display: grid;
     gap: 0.45rem;
-    padding-left: 1.25rem;
+    max-height: 12rem;
+    overflow-y: auto;
+    overscroll-behavior: contain;
+    scrollbar-gutter: stable;
+    scrollbar-color: #7a6552 #231d19;
+    padding: 0.75rem 0.75rem 0.75rem 2rem;
+    margin: 0;
+    border: 1px solid #7a6552;
+    border-radius: 0.35rem;
+    background: #231d19;
     color: var(--muted-color, #b9aa98);
     font-size: 0.82rem;
+  }
+
+  .combat-log::-webkit-scrollbar {
+    width: 0.6rem;
+  }
+
+  .combat-log::-webkit-scrollbar-track {
+    background: #231d19;
+  }
+
+  .combat-log::-webkit-scrollbar-thumb {
+    border: 2px solid #231d19;
+    border-radius: 1rem;
+    background: #7a6552;
+  }
+
+  .combat-log:focus-visible {
+    outline: 2px solid var(--accent-color, #d4552e);
+    outline-offset: 2px;
   }
 
   button:disabled {
@@ -414,6 +443,8 @@ export class GameSetup extends HTMLElement {
   }
 
   announce(events: readonly GameEvent[]) {
+    const important = latestImportantEvent(events);
+    if (important) this.#dispatchUiEvent('game-important-event', important);
     const latest = events.at(-1);
     const reversedEvents = [...events].reverse();
     const reveal = reversedEvents.find(event => event.type === 'noise-revealed');
@@ -493,6 +524,8 @@ export class GameSetup extends HTMLElement {
     } else if (latest?.type === 'reinforcement-complete') {
       this.#announcement = 'Reinforcement complete.';
     }
+    const liveRegion = this.shadowRoot?.querySelector('.announcement');
+    if (liveRegion) liveRegion.textContent = this.#announcement;
   }
 
   #dispatchCommand(command: GameCommand) {
@@ -1293,8 +1326,14 @@ export class GameSetup extends HTMLElement {
     }
     return h(
       'ol',
-      { className: 'combat-log', ariaLabel: 'Fight results' },
-      entries.map(result => {
+      {
+        className: 'combat-log',
+        ariaLabel: 'Fight results, newest first',
+        tabIndex: 0,
+        reversed: true,
+        start: entries.length,
+      },
+      [...entries].reverse().map(result => {
         const heroHigh = Math.max(...result.heroRolls);
         const skavenHigh = Math.max(...result.skavenRolls);
         const outcome =
@@ -1326,7 +1365,7 @@ export class GameSetup extends HTMLElement {
       content,
       h('p', { className: 'error', role: 'alert', textContent: this.#error }),
       h('p', {
-        className: 'visually-hidden',
+        className: 'visually-hidden announcement',
         ariaLive: 'polite',
         textContent: this.#announcement,
       })

@@ -275,6 +275,75 @@ test('a revealed group spills through unrelated Skaven when leaving a crowded sp
   ]);
 });
 
+test('a stranded group away from an entry cannot spill through heroes', () => {
+  const base = heroTurnWithRevealedGroup();
+  let state: GameState = {
+    ...base,
+    heroes: [{ ...base.heroes[0]!, position: { row: 2, column: 1 } }],
+    revealedNoise: [{ ...base.revealedNoise[0]!, position: { row: 1, column: 1 } }],
+    concealedNoise: [
+      { id: 'blocking-noise', resultId: 'nothing', position: { row: 1, column: 2 } },
+    ],
+  };
+  state = resolveCommand(
+    state,
+    {
+      type: 'place-revealed-skaven',
+      noiseId: 'noise-1',
+      position: { row: 1, column: 1 },
+      facing: 'south',
+    },
+    fixedRolls(0)
+  ).state;
+  assert.deepEqual(getLegalSkavenPlacementPositions(state, THE_NEST, 'noise-1'), []);
+});
+
+test('entry spill keeps normal reachable squares before searching through heroes', () => {
+  const base = heroTurnWithRevealedGroup('three-clanrats');
+  let state: GameState = {
+    ...base,
+    heroes: [{ ...base.heroes[0]!, position: { row: 9, column: 1 } }],
+    revealedNoise: [{ ...base.revealedNoise[0]!, position: { row: 10, column: 0 } }],
+  };
+  for (const position of [
+    { row: 10, column: 0 },
+    { row: 10, column: 1 },
+  ]) {
+    state = resolveCommand(
+      state,
+      { type: 'place-revealed-skaven', noiseId: 'noise-1', position, facing: 'east' },
+      fixedRolls(0)
+    ).state;
+  }
+  assert.deepEqual(getLegalSkavenPlacementPositions(state, THE_NEST, 'noise-1'), [
+    { row: 11, column: 1 },
+  ]);
+});
+
+test('a blocked entry cannot spill through concealed Noise', () => {
+  const base = heroTurnWithRevealedGroup();
+  let state: GameState = {
+    ...base,
+    heroes: [{ ...base.heroes[0]!, position: { row: 10, column: 1 } }],
+    revealedNoise: [{ ...base.revealedNoise[0]!, position: { row: 10, column: 0 } }],
+    concealedNoise: [
+      { id: 'blocking-north', resultId: 'nothing', position: { row: 9, column: 1 } },
+      { id: 'blocking-south', resultId: 'nothing', position: { row: 11, column: 1 } },
+    ],
+  };
+  state = resolveCommand(
+    state,
+    {
+      type: 'place-revealed-skaven',
+      noiseId: 'noise-1',
+      position: { row: 10, column: 0 },
+      facing: 'east',
+    },
+    fixedRolls(0)
+  ).state;
+  assert.deepEqual(getLegalSkavenPlacementPositions(state, THE_NEST, 'noise-1'), []);
+});
+
 test('revealed groups interrupt Hero actions until every model is placed', () => {
   const state = heroTurnWithRevealedGroup();
 

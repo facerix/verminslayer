@@ -1002,8 +1002,7 @@ export const getLegalSkavenPlacementPositions = (
       .filter(candidate => candidate.id !== noise.id)
       .map(candidate => candidate.position),
   ];
-  const blockedPositions = [
-    ...state.heroes.flatMap(hero => (hero.position ? [hero.position] : [])),
+  const blockedNoisePositions = [
     // Spawning groups spill through occupied Skaven, but unavailableDestinations still
     // prevents two models from finishing on the same square.
     ...state.concealedNoise.map(candidate => candidate.position),
@@ -1011,15 +1010,30 @@ export const getLegalSkavenPlacementPositions = (
       .filter(candidate => candidate.id !== noise.id)
       .map(candidate => candidate.position),
   ];
-  return getNearestReachablePositions({
+  const context = {
     board: mission.board,
     start: noise.position,
     maximumSteps: mission.board.width * mission.board.height,
     closedDoors: state.doors.filter(door => door.status === 'closed').map(door => door.position),
-    blockedPositions,
+    blockedPositions: [
+      ...state.heroes.flatMap(hero => (hero.position ? [hero.position] : [])),
+      ...blockedNoisePositions,
+    ],
     unavailableDestinations,
     exitOpen: state.nests.every(nest => nest.status === 'destroyed'),
-  });
+  };
+  const positions = getNearestReachablePositions(context);
+  const models = mission.noiseResults[noise.resultId].models;
+  const canSpillPastHeroes =
+    models.length > 1 &&
+    models.every(model => model === 'clanrat') &&
+    noise.remainingModels.length < models.length &&
+    mission.board.spawns.some(spawn => samePosition(spawn, noise.position));
+  if (positions.length > 0 || !canSpillPastHeroes) return positions;
+
+  // Extra Clanrats stranded at an entry may spill past heroes, but every occupied
+  // square remains unavailable as a destination.
+  return getNearestReachablePositions({ ...context, blockedPositions: blockedNoisePositions });
 };
 
 export const getLegalHeroMovePaths = (

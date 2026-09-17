@@ -99,6 +99,7 @@ export class InitialNoiseGameModule implements GameModule {
           position: hero.position,
           facing: hero.facing,
           woundsRemaining: hero.woundsRemaining,
+          woundsMaximum: HERO_DEFINITIONS[hero.definitionId].stats.wounds,
         },
       ];
     });

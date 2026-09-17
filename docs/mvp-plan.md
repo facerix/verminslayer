@@ -95,6 +95,19 @@ additional missions, and permissive state-editing tools.
 
 ## Canvas and HTML Experience
 
+UX checkpoint before continuing the rules implementation:
+
+- The controls panel scrolls independently while the complete board stays visible;
+  narrow layouts keep the board above an independently scrolling bottom panel.
+- The latest public Fight or Noise reveal appears above the board with a brief highlight toast.
+- Model tokens show remaining HP as filled pips and lost HP as hollow pips.
+- The combat log has a bounded, keyboard-scrollable area and displays newest Fights first.
+- Follow-up for mission resolution: add nest-destruction and victory events to
+  `src/game/eventPresentation.ts` when those engine events are implemented.
+- Development follow-up: investigate stale cached HTML/modules in reused preview origins
+  and the multiple-service-worker warning. During this UX check, stale assets caused
+  mismatched shell/module errors; a fresh preview origin loaded the current build correctly.
+
 - Render the map at device-pixel-ratio resolution with simple colored tiles, doors, nests, spawn/exit markers, face-down noise tokens, and labeled model discs with facing arrows, wounds, Guard, Ward, and activation status.
 - Scale the whole 13×19 board to the available desktop/tablet area. Use a side control panel on wide screens and a bottom panel on narrower tablet layouts.
 - Use Canvas for rendering, selection, legal-square highlighting, paths, and hit-testing; use semantic HTML for setup, action buttons, ability choices, dice results, phase status, and an `aria-live` event log.

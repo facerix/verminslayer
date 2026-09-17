@@ -34,7 +34,10 @@ physical Verminslayer board game. It is deliberately a living document; see
 - Replace revealed Noise with the models shown on the token. If the result is `Nothing`,
   simply remove it. Place the first model on the token square and each later model on a
   nearest empty reachable square. Skaven may spill through spaces occupied by other Skaven
-  during this placement search, but models cannot finish on the same square.
+  during this placement search, but models cannot finish on the same square. When a 2- or
+  3-Clanrat token reveals on a Skaven entry and extra Clanrats have no empty reachable
+  square because heroes block the route, those extra Clanrats may also spill through
+  hero-occupied squares. They must still finish on an empty square.
 - A Noise token's movement counts as the Movement of every Skaven it reveals. If it reveals
   during its own activation, finish placing the group, then its Movement is complete. After
   the normal React window, each newly revealed model may take 1 Action but may not Move again

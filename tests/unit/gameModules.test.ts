@@ -178,6 +178,7 @@ test('the setup module projects deployed heroes onto the board', () => {
       position: { row: 16, column: 3 },
       facing: 'north',
       woundsRemaining: 3,
+      woundsMaximum: 3,
     },
   ]);
   assert.deepEqual(board.legalSquares, []);

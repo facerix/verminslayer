@@ -32,7 +32,7 @@ const STYLES = `
 
   .board-frame {
     position: relative;
-    width: min(100%, calc(72vh * 13 / 19), 39rem);
+    width: min(100%, calc((var(--board-height, 72vh)) * 13 / 19), 39rem);
     aspect-ratio: 13 / 19;
     border: 1px solid #5d4c3d;
     border-radius: 0.35rem;
@@ -182,7 +182,7 @@ export class GameBoard extends HTMLElement {
       ? ` Deployed heroes: ${this.#heroes
           .map(
             hero =>
-              `${hero.label} at row ${hero.position.row + 1}, column ${hero.position.column + 1}, facing ${hero.facing}`
+              `${hero.label} at row ${hero.position.row + 1}, column ${hero.position.column + 1}, facing ${hero.facing}, ${hero.woundsRemaining} of ${hero.woundsMaximum} Wounds remaining`
           )
           .join('; ')}.`
       : '';
@@ -205,7 +205,7 @@ export class GameBoard extends HTMLElement {
       ? ` Skaven models: ${this.#skaven
           .map(
             model =>
-              `${model.accessibleLabel} #${model.identifier} at row ${model.position.row + 1}, column ${model.position.column + 1}, facing ${model.facing}, ${model.woundsRemaining} Wounds remaining`
+              `${model.accessibleLabel} #${model.identifier} at row ${model.position.row + 1}, column ${model.position.column + 1}, facing ${model.facing}, ${model.woundsRemaining} of ${model.woundsMaximum} Wounds remaining`
           )
           .join('; ')}.`
       : '';

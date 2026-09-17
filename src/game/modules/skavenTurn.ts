@@ -133,6 +133,7 @@ export class SkavenTurnGameModule implements GameModule {
               position: hero.position,
               facing: hero.facing,
               woundsRemaining: hero.woundsRemaining,
+              woundsMaximum: HERO_DEFINITIONS[hero.definitionId].stats.wounds,
               activationStatus:
                 view.activeHeroId === hero.id
                   ? ('active' as const)
@@ -156,6 +157,7 @@ export class SkavenTurnGameModule implements GameModule {
       position: skaven.position,
       facing: skaven.facing,
       woundsRemaining: skaven.woundsRemaining,
+      woundsMaximum: SKAVEN_DEFINITIONS[skaven.definitionId].stats.wounds,
       activationStatus:
         view.activeSkavenId === skaven.id
           ? ('active' as const)

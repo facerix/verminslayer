@@ -134,7 +134,9 @@ main {
   display: grid;
   grid-template-columns: minmax(22rem, 1fr) minmax(17rem, 22rem);
   gap: clamp(1rem, 3vw, 2.5rem);
-  align-items: start;
+  align-items: stretch;
+  overflow: hidden;
+  min-height: 0;
   max-width: 76rem;
   width: 100%;
   margin: 0 auto;
@@ -142,14 +144,30 @@ main {
 }
 
 .board-panel {
+  position: relative;
   display: grid;
+  grid-template-rows: auto auto minmax(0, 1fr);
+  gap: 0.75rem;
   min-width: 0;
+  min-height: 0;
   place-items: center;
+}
+
+.board-stage {
+  width: 100%;
+  height: 100%;
+  min-height: 0;
+  container-type: size;
+}
+
+.board-stage game-board {
+  height: 100%;
+  --board-height: 100cqh;
 }
 
 .mission-heading {
   width: min(100%, 39rem);
-  margin-bottom: 0.75rem;
+  margin-bottom: 0;
 
   h2,
   p {
@@ -160,6 +178,13 @@ main {
 .mission-panel {
   display: grid;
   gap: 1.5rem;
+  min-height: 0;
+  min-width: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  scrollbar-gutter: stable;
+  scrollbar-color: #7a6552 #231d19;
+  align-content: start;
   padding: clamp(1.25rem, 3vw, 2rem);
   border: 1px solid #4f4135;
   border-radius: 0.5rem;
@@ -184,6 +209,25 @@ main {
   font-weight: 700;
   letter-spacing: 0.16em;
   text-transform: uppercase;
+}
+
+.mission-panel::-webkit-scrollbar {
+  width: 0.6rem;
+}
+
+.mission-panel::-webkit-scrollbar-track {
+  background: #231d19;
+}
+
+.mission-panel::-webkit-scrollbar-thumb {
+  border: 2px solid #231d19;
+  border-radius: 1rem;
+  background: #7a6552;
+}
+
+.mission-panel:focus-visible {
+  outline: 2px solid var(--accent-color);
+  outline-offset: 2px;
 }
 
 .mission-facts {
@@ -357,6 +401,7 @@ a:focus-visible {
 .u-fill-height {
   height: -webkit-fill-available;
   height: 100vh;
+  height: 100dvh;
 }
 
 .u-stretch-height {
@@ -387,6 +432,19 @@ dialog::backdrop {
 @media (max-width: 767px) {
   .game-shell {
     grid-template-columns: 1fr;
+    grid-template-rows: minmax(0, 3fr) minmax(0, 2fr);
+    gap: 0.75rem;
+    padding: 0.75rem;
+  }
+
+  .mission-heading {
+    display: flex;
+    gap: 0.75rem;
+    align-items: baseline;
+  }
+
+  .event-highlight {
+    min-height: 0;
   }
 
   .mission-panel {

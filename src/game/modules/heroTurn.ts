@@ -4,7 +4,11 @@ import type {
   BoardNoisePresentation,
   BoardSkavenPresentation,
 } from '/src/canvas/boardRenderer.js';
-import { getSkavenModelIdentifier, HERO_DEFINITIONS } from '/src/game/entities.js';
+import {
+  getSkavenModelIdentifier,
+  HERO_DEFINITIONS,
+  SKAVEN_DEFINITIONS,
+} from '/src/game/entities.js';
 import type { HeroId } from '/src/game/entities.js';
 import type { GameModule } from '/src/game/gameModule.js';
 import type { GameSession } from '/src/game/gameSession.js';
@@ -123,6 +127,7 @@ export class HeroTurnGameModule implements GameModule {
           position: hero.position,
           facing: hero.facing,
           woundsRemaining: hero.woundsRemaining,
+          woundsMaximum: HERO_DEFINITIONS[hero.definitionId].stats.wounds,
           activationStatus:
             view.activeHeroId === hero.id
               ? ('active' as const)
@@ -150,6 +155,7 @@ export class HeroTurnGameModule implements GameModule {
       position: skaven.position,
       facing: skaven.facing,
       woundsRemaining: skaven.woundsRemaining,
+      woundsMaximum: SKAVEN_DEFINITIONS[skaven.definitionId].stats.wounds,
     }));
     this.#board.noiseTokens = [
       ...view.noiseTokens.map(noise => ({ position: noise.position })),

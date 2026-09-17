@@ -619,6 +619,71 @@ test('two private reinforcements complete the round and reset Command to 2', () 
   assert.equal(state.skavenTurnStep, null);
 });
 
+for (const resultId of ['two-clanrats', 'three-clanrats'] as const) {
+  test(`${resultId} reinforcement spills past a hero blocking the entry`, () => {
+    const base = skavenTurn();
+    const heroPosition = { row: 10, column: 1 };
+    let state: GameState = {
+      ...base,
+      skaven: [],
+      skavenTurnStep: 'reinforce',
+      skavenActivationIds: [],
+      remainingNoiseBag: [resultId],
+      reinforcementDrawsResolved: 1,
+      heroes: [{ ...base.heroes[0]!, position: heroPosition }],
+    };
+    state = resolveCommand(state, { type: 'draw-reinforcement-noise' }, fixedRolls(0)).state;
+    state = resolveCommand(
+      state,
+      { type: 'place-reinforcement-noise', position: { row: 10, column: 0 } },
+      fixedRolls(0)
+    ).state;
+    const noiseId = state.revealedNoise[0]!.id;
+    state = resolveCommand(
+      state,
+      {
+        type: 'place-revealed-skaven',
+        noiseId,
+        position: { row: 10, column: 0 },
+        facing: 'east',
+      },
+      fixedRolls(0)
+    ).state;
+
+    assert.deepEqual(getLegalSkavenPlacementPositions(state, THE_NEST, noiseId), [
+      { row: 9, column: 1 },
+      { row: 11, column: 1 },
+    ]);
+    assert.throws(
+      () =>
+        resolveCommand(
+          state,
+          { type: 'place-revealed-skaven', noiseId, position: heroPosition, facing: 'east' },
+          fixedRolls(0)
+        ),
+      (error: unknown) => error instanceof RulesError && error.code === 'INVALID_SKAVEN_PLACEMENT'
+    );
+    while (state.revealedNoise.length > 0) {
+      const position = getLegalSkavenPlacementPositions(state, THE_NEST, noiseId)[0];
+      assert.ok(position, 'every remaining Clanrat must have an empty spill destination');
+      state = resolveCommand(
+        state,
+        { type: 'place-revealed-skaven', noiseId, position, facing: 'east' },
+        fixedRolls(0)
+      ).state;
+    }
+
+    assert.equal(state.skaven.length, THE_NEST.noiseResults[resultId].models.length);
+    assert.equal(
+      new Set(state.skaven.map(model => JSON.stringify(model.position))).size,
+      state.skaven.length
+    );
+    assert.deepEqual(state.heroes[0]!.position, heroPosition);
+    assert.equal(state.phase, 'hero');
+    assert.equal(state.noiseActionIds.length, 0);
+  });
+}
+
 test('an immediately revealed reinforcement is placed but receives no Action this turn', () => {
   let state: GameState = {
     ...skavenTurn(),
