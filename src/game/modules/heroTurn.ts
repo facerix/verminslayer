@@ -77,6 +77,11 @@ const NOISE_NAMES: Readonly<Record<NoiseResultId, string>> = Object.freeze({
 });
 
 const HERO_COMMAND_TYPES = new Set<GameCommand['type']>([
+  'reroll-fight-die',
+  'accept-fight-rolls',
+  'resolve-ward',
+  'guard-hero',
+  'ward-hero',
   'start-hero-activation',
   'move-hero',
   'dash-hero',
@@ -126,6 +131,8 @@ export class HeroTurnGameModule implements GameModule {
           label: HERO_LABELS[HERO_DEFINITIONS[hero.definitionId].id],
           position: hero.position,
           facing: hero.facing,
+          guarded: view.guards.includes(hero.id),
+          warded: view.wards.includes(hero.id),
           woundsRemaining: hero.woundsRemaining,
           woundsMaximum: HERO_DEFINITIONS[hero.definitionId].stats.wounds,
           activationStatus:
@@ -190,6 +197,11 @@ export class HeroTurnGameModule implements GameModule {
   #handleCommand(event: Event): boolean {
     const command = (event as CustomEvent<GameCommand>).detail;
     if (!HERO_COMMAND_TYPES.has(command.type)) return false;
+    if (
+      this.#session.heroView.phase === 'skaven' &&
+      ['reroll-fight-die', 'accept-fight-rolls', 'resolve-ward'].includes(command.type)
+    )
+      return false;
     try {
       const events = this.#dispatch(command);
       this.#clearSelection();

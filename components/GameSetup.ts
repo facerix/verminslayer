@@ -1,4 +1,5 @@
 import { latestImportantEvent } from '/src/game/eventPresentation.js';
+import { getRerollAbilities, distance } from '/src/game/reactiveCombat.js';
 import { h } from '/src/domUtils.js';
 import {
   ALL_HERO_IDS,
@@ -369,15 +370,18 @@ export class GameSetup extends HTMLElement {
     if (this.#view?.phase !== 'skaven' && view.phase === 'skaven') {
       this.#skavenHandoffComplete = false;
     }
-    const reactKey = view.pendingReact
-      ? `${view.pendingReact.source}:${view.pendingReact.sourceId}`
-      : null;
+    const reactKey =
+      view.pendingCombat && view.phase === 'skaven'
+        ? `combat:${view.pendingCombat.heroId}:${view.pendingCombat.skavenId}`
+        : view.pendingReact
+          ? `${view.pendingReact.source}:${view.pendingReact.sourceId}`
+          : null;
     if (reactKey !== this.#reactHandoffKey) {
       if (this.#reactHandoffKey && !reactKey && view.mode === 'two-player') {
         this.#skavenHandoffComplete = false;
       }
+      if (!this.#reactHandoffKey || !reactKey) this.#reactHandoffComplete = false;
       this.#reactHandoffKey = reactKey;
-      this.#reactHandoffComplete = false;
     }
     this.#view = view;
     this.#privateNoiseView = null;
@@ -456,7 +460,13 @@ export class GameSetup extends HTMLElement {
     );
     const fight = reversedEvents.find(event => event.type === 'fight-rolled');
     const placement = reversedEvents.find(event => event.type === 'skaven-placed');
-    if (fight?.type === 'fight-rolled') {
+    const choice = reversedEvents.find(event => event.type === 'fight-choice-opened');
+    const reroll = reversedEvents.find(event => event.type === 'fight-dice-rerolled');
+    if (choice?.type === 'fight-choice-opened') {
+      this.#announcement = `${HERO_DEFINITIONS[choice.heroId].name}: resolve ${choice.stage === 'ward' ? 'the Ward reroll' : 'optional Fight rerolls'} before wounds are applied.`;
+    } else if (reroll?.type === 'fight-dice-rerolled' && !fight) {
+      this.#announcement = `${HERO_DEFINITIONS[reroll.heroId].name} used ${reroll.ability}: dice ${reroll.dieIndices.map(index => index + 1).join(', ')} now show ${reroll.rolls.join(', ')}.`;
+    } else if (fight?.type === 'fight-rolled') {
       const heroName = HERO_DEFINITIONS[fight.heroId].name;
       const outcome =
         fight.outcome === 'tie'
@@ -733,6 +743,14 @@ export class GameSetup extends HTMLElement {
   }
 
   #renderHeroTurn(): HTMLElement {
+    if (this.#view?.pendingCombat) return this.#renderCombatChoice();
+    if (
+      this.#view?.phase === 'skaven' &&
+      this.#view.mode === 'two-player' &&
+      this.#view.revealedNoise.length > 0 &&
+      !this.#skavenHandoffComplete
+    )
+      return this.#renderSkavenTurn();
     if (this.#view?.revealedNoise[0]) {
       const noise = this.#view.revealedNoise[0];
       const definitionId = noise.remainingModels[0];
@@ -883,6 +901,16 @@ export class GameSetup extends HTMLElement {
       push.addEventListener('click', () =>
         this.#dispatchCommand({ type: 'push-hero', heroId: activeHero.id })
       );
+      const guard = h('button', {
+        type: 'button',
+        textContent: 'Guard · 1 Action · end activation',
+        disabled: (this.#view?.actionsRemaining ?? 0) < 1,
+      });
+      guard.addEventListener('click', () =>
+        this.#dispatchCommand({ type: 'guard-hero', heroId: activeHero.id })
+      );
+      const wards =
+        activeHero.definitionId === 'maximilian' ? this.#wardButtons(activeHero.id, false) : [];
       const end = h('button', { type: 'button', textContent: 'End activation' });
       end.addEventListener('click', () => {
         const command: GameCommand = {
@@ -912,7 +940,9 @@ export class GameSetup extends HTMLElement {
         h(
           'div',
           { className: 'action-grid' },
-          choosingDestination ? [move, cancelMove] : [move, fight, interact, dash, push]
+          choosingDestination
+            ? [move, cancelMove]
+            : [move, fight, interact, dash, push, guard, ...wards]
         ),
         ...(choosingDestination ? [] : [this.#renderCombatLog(), end]),
       ]);
@@ -971,6 +1001,7 @@ export class GameSetup extends HTMLElement {
   #renderSkavenTurn(): HTMLElement {
     const view = this.#view;
     if (!view) return h('div');
+    if (view.pendingReact && view.revealedNoise.length === 0) return this.#renderReactWindow();
     if (view.mode === 'two-player' && !this.#skavenHandoffComplete) {
       const button = h('button', { type: 'button', textContent: 'I am the Skaven player' });
       button.addEventListener('click', () => {
@@ -987,7 +1018,6 @@ export class GameSetup extends HTMLElement {
       ]);
     }
 
-    if (view.pendingReact) return this.#renderReactWindow();
     if (view.skavenTurnStep === 'activate-noise' && view.noiseActionIds.length === 0) {
       return this.#renderNoiseActivation();
     }
@@ -1210,6 +1240,7 @@ export class GameSetup extends HTMLElement {
       );
       actions.push(button);
     }
+    if (this.#view.command >= 2) actions.push(...this.#wardButtons('maximilian', true));
     const skip = h('button', { type: 'button', textContent: 'Do not React' });
     skip.addEventListener('click', () => this.#dispatchCommand({ type: 'skip-react' }));
     return h('div', { className: 'activation-card' }, [
@@ -1222,7 +1253,7 @@ export class GameSetup extends HTMLElement {
         className: 'help',
         textContent:
           actions.length > 0
-            ? 'One hero may immediately take one eligible Fight or Door action.'
+            ? 'One hero may immediately take one eligible Fight, Door, or Ward action.'
             : 'No hero has an eligible implemented 1-Action response. Continue the Skaven turn.',
       }),
       h('div', { className: 'action-grid' }, [...actions, skip]),
@@ -1324,6 +1355,109 @@ export class GameSetup extends HTMLElement {
     ]);
   }
 
+  #rerollText(rerolls: import('/src/game/gameState.js').CombatResult['rerolls']): string {
+    return (rerolls ?? [])
+      .map(
+        reroll =>
+          ` ${reroll.ability}: dice ${reroll.dieIndices.map(index => index + 1).join(', ')} [${reroll.previousRolls.join(', ')}] → [${reroll.rolls.join(', ')}].`
+      )
+      .join('');
+  }
+
+  #wardButtons(heroId: HeroId, reacting: boolean): HTMLElement[] {
+    const view = this.#view;
+    const caster = view?.heroes.find(hero => hero.id === heroId);
+    if (
+      !view ||
+      !caster?.position ||
+      caster.woundsRemaining <= 0 ||
+      view.exitedHeroIds.includes(caster.id)
+    )
+      return [];
+    return view.heroes
+      .filter(
+        hero =>
+          hero.position &&
+          hero.woundsRemaining > 0 &&
+          !view.exitedHeroIds.includes(hero.id) &&
+          !view.wards.includes(hero.id) &&
+          distance(caster.position!, hero.position) <= 3
+      )
+      .map(hero => {
+        const button = h('button', {
+          type: 'button',
+          textContent: `Ward ${HERO_DEFINITIONS[hero.id].name} · ${reacting ? '2 Command' : '1 Action'}`,
+          disabled: !reacting && (view.actionsRemaining ?? 0) < 1,
+        });
+        button.addEventListener('click', () =>
+          this.#dispatchCommand({
+            type: reacting ? 'react-ward-hero' : 'ward-hero',
+            heroId,
+            targetHeroId: hero.id,
+          })
+        );
+        return button;
+      });
+  }
+
+  #renderCombatChoice(): HTMLElement {
+    const view = this.#view;
+    const combat = view?.pendingCombat;
+    if (!view || !combat) return h('div');
+    if (view.phase === 'skaven' && view.mode === 'two-player' && !this.#reactHandoffComplete) {
+      const ready = h('button', { type: 'button', textContent: 'I am the Hero player' });
+      ready.addEventListener('click', () => {
+        this.#reactHandoffComplete = true;
+        this.#render();
+      });
+      return h('div', { className: 'handoff' }, [
+        h('h2', { textContent: 'Pass the device' }),
+        h('p', { textContent: 'Hand the device to the Hero player to resolve this Fight.' }),
+        ready,
+      ]);
+    }
+    const controls: HTMLElement[] = [];
+    if (combat.stage === 'ward') {
+      const ward = h('button', { type: 'button', textContent: 'Resolve Ward reroll' });
+      ward.addEventListener('click', () => this.#dispatchCommand({ type: 'resolve-ward' }));
+      controls.push(
+        h('p', {
+          className: 'help',
+          textContent:
+            'Consume the Ward and reroll every Fight die that has not already been rerolled; each die may be rerolled only once.',
+        }),
+        ward
+      );
+    } else {
+      for (const ability of getRerollAbilities(view, combat.heroId)) {
+        combat.heroRolls.forEach((value, index) => {
+          if (combat.rerolledDice.includes(index)) return;
+          const button = h('button', {
+            type: 'button',
+            textContent: `${ability === 'karaghul' ? 'Karaghul' : 'Rememberer'}: reroll die ${index + 1} (${value})`,
+          });
+          button.addEventListener('click', () =>
+            this.#dispatchCommand({ type: 'reroll-fight-die', ability, dieIndex: index })
+          );
+          controls.push(button);
+        });
+      }
+      const accept = h('button', { type: 'button', textContent: 'Accept Fight dice' });
+      accept.addEventListener('click', () => this.#dispatchCommand({ type: 'accept-fight-rolls' }));
+      controls.push(accept);
+    }
+    return h('div', { className: 'activation-card' }, [
+      h('h2', {
+        textContent: combat.stage === 'ward' ? 'Fight · Ward reroll' : 'Fight · optional rerolls',
+      }),
+      h('p', {
+        textContent: `${HERO_DEFINITIONS[combat.heroId].name}: [${combat.heroRolls.join(', ')}]. ${SKAVEN_DEFINITIONS[combat.skavenDefinitionId].name}: [${combat.skavenRolls.join(', ')}]. Wounds are applied after these choices.${this.#rerollText(combat.rerolls)}`,
+      }),
+      h('div', { className: 'action-grid' }, controls),
+      this.#renderCombatLog(),
+    ]);
+  }
+
   #renderCombatLog(): HTMLElement {
     const entries = this.#view?.combatLog ?? [];
     if (entries.length === 0) {
@@ -1346,9 +1480,9 @@ export class GameSetup extends HTMLElement {
             ? 'tie; no Wound'
             : result.outcome === 'hero-won'
               ? 'hero wins; Skaven suffers 1 Wound'
-              : 'Skaven wins; hero suffers 1 Wound';
+              : `Skaven wins; hero suffers ${result.woundsInflicted ?? 1} ${(result.woundsInflicted ?? 1) === 1 ? 'Wound' : 'Wounds'}`;
         return h('li', {
-          textContent: `${HERO_DEFINITIONS[result.heroId].name} [${result.heroRolls.join(', ')}], high ${heroHigh}; ${SKAVEN_DEFINITIONS[result.skavenDefinitionId].name} [${result.skavenRolls.join(', ')}], high ${skavenHigh}: ${outcome}.`,
+          textContent: `${HERO_DEFINITIONS[result.heroId].name} [${result.heroRolls.join(', ')}], high ${heroHigh}; ${SKAVEN_DEFINITIONS[result.skavenDefinitionId].name} [${result.skavenRolls.join(', ')}], high ${skavenHigh}: ${outcome}.${this.#rerollText(result.rerolls)}`,
         });
       })
     );

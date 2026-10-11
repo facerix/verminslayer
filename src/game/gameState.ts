@@ -12,7 +12,21 @@ import {
   isLegalMovementPath,
 } from '/src/game/pathfinding.js';
 import type { MovementContext, ReachablePath } from '/src/game/pathfinding.js';
-import { resolveOpposedRoll } from '/src/game/combat.js';
+import { resolveOpposedRoll, rollDice } from '/src/game/combat.js';
+import {
+  EMPTY_ABILITY_USAGE,
+  distance,
+  inFrontArc,
+  getFightDice,
+  fightOutcome,
+  getRerollAbilities,
+} from '/src/game/reactiveCombat.js';
+import type {
+  AbilityUsage,
+  PendingCombat,
+  PendingSkavenMovement,
+  RerollAbility,
+} from '/src/game/reactiveCombat.js';
 import { getNearestReachablePositions } from '/src/game/skavenPlacement.js';
 
 export type GameMode = 'solo' | 'two-player';
@@ -61,7 +75,16 @@ export interface SkavenState {
   readonly facing: Facing;
 }
 
+export interface CombatReroll {
+  readonly ability: RerollAbility | 'ward';
+  readonly dieIndices: readonly number[];
+  readonly previousRolls: readonly number[];
+  readonly rolls: readonly number[];
+}
+
 export interface CombatResult {
+  readonly rerolls?: readonly CombatReroll[];
+  readonly woundsInflicted?: number;
   readonly heroId: HeroId;
   readonly skavenId: string;
   readonly skavenDefinitionId: SkavenId;
@@ -116,6 +139,11 @@ export interface GameState {
   readonly skaven: readonly SkavenState[];
   readonly nextSkavenSequence: number;
   readonly combatLog: readonly CombatResult[];
+  readonly guards: readonly HeroId[];
+  readonly wards: readonly HeroId[];
+  readonly abilityUsage: AbilityUsage;
+  readonly pendingCombat: PendingCombat | null;
+  readonly pendingSkavenMovement: PendingSkavenMovement | null;
   readonly pendingNoise: PendingNoiseState | null;
   readonly nextNoiseSequence: number;
   readonly initialNoiseDrawsResolved: number;
@@ -143,6 +171,19 @@ export interface GameState {
 }
 
 export type GameCommand =
+  | { readonly type: 'guard-hero'; readonly heroId: HeroId }
+  | {
+      readonly type: 'ward-hero' | 'react-ward-hero';
+      readonly heroId: HeroId;
+      readonly targetHeroId: HeroId;
+    }
+  | {
+      readonly type: 'reroll-fight-die';
+      readonly ability: RerollAbility;
+      readonly dieIndex: number;
+    }
+  | { readonly type: 'accept-fight-rolls' }
+  | { readonly type: 'resolve-ward' }
   | {
       readonly type: 'configure-game';
       readonly mode: GameMode;
@@ -252,6 +293,28 @@ export type GameCommand =
 
 export type GameEvent =
   | {
+      readonly type:
+        | 'guard-placed'
+        | 'guard-triggered'
+        | 'guard-expired'
+        | 'ward-placed'
+        | 'ward-consumed'
+        | 'snorri-saved';
+      readonly heroId: HeroId;
+    }
+  | {
+      readonly type: 'fight-choice-opened';
+      readonly heroId: HeroId;
+      readonly stage: 'rerolls' | 'ward';
+    }
+  | {
+      readonly type: 'fight-dice-rerolled';
+      readonly heroId: HeroId;
+      readonly ability: RerollAbility | 'ward';
+      readonly dieIndices: readonly number[];
+      readonly rolls: readonly number[];
+    }
+  | {
       readonly type: 'game-configured';
       readonly mode: GameMode;
       readonly heroIds: readonly HeroId[];
@@ -296,7 +359,7 @@ export type GameEvent =
   | {
       readonly type: 'action-spent';
       readonly heroId: HeroId;
-      readonly action: 'dash' | 'interact' | 'fight';
+      readonly action: 'dash' | 'interact' | 'fight' | 'guard' | 'ward';
       readonly actionsRemaining: number;
     }
   | {
@@ -352,7 +415,7 @@ export type GameEvent =
   | {
       readonly type: 'hero-reacted';
       readonly heroId: HeroId;
-      readonly action: 'fight' | 'interact';
+      readonly action: 'fight' | 'interact' | 'ward';
       readonly commandRemaining: number;
     }
   | { readonly type: 'noise-activation-started'; readonly noiseId: string }
@@ -444,6 +507,11 @@ export interface HeroGameView {
   readonly legalDoorInteractions: readonly Position[];
   readonly legalFightTargetIds: readonly string[];
   readonly combatLog: readonly CombatResult[];
+  readonly guards: readonly HeroId[];
+  readonly wards: readonly HeroId[];
+  readonly abilityUsage: AbilityUsage;
+  readonly pendingCombat: PendingCombat | null;
+  readonly pendingSkavenMovement: PendingSkavenMovement | null;
 }
 
 export interface SkavenGameView extends Omit<HeroGameView, 'noiseTokens'> {
@@ -484,6 +552,20 @@ const freezeCombatResult = (result: CombatResult): CombatResult =>
     ...result,
     heroRolls: Object.freeze([...result.heroRolls]),
     skavenRolls: Object.freeze([...result.skavenRolls]),
+    ...(result.rerolls
+      ? {
+          rerolls: Object.freeze(
+            result.rerolls.map(reroll =>
+              Object.freeze({
+                ...reroll,
+                dieIndices: Object.freeze([...reroll.dieIndices]),
+                previousRolls: Object.freeze([...reroll.previousRolls]),
+                rolls: Object.freeze([...reroll.rolls]),
+              })
+            )
+          ),
+        }
+      : {}),
   });
 
 const freezePendingNoise = (noise: PendingNoiseState): PendingNoiseState =>
@@ -509,6 +591,23 @@ const freezeState = (state: GameState): GameState =>
     revealedNoise: Object.freeze(state.revealedNoise.map(freezeRevealedNoise)),
     skaven: Object.freeze(state.skaven.map(freezeSkaven)),
     combatLog: Object.freeze(state.combatLog.map(freezeCombatResult)),
+    guards: Object.freeze([...state.guards]),
+    wards: Object.freeze([...state.wards]),
+    abilityUsage: Object.freeze({ ...state.abilityUsage }),
+    pendingCombat: state.pendingCombat
+      ? (Object.freeze({
+          ...freezeCombatResult(state.pendingCombat),
+          rerolledDice: Object.freeze([...state.pendingCombat.rerolledDice]),
+        }) as PendingCombat)
+      : null,
+    pendingSkavenMovement: state.pendingSkavenMovement
+      ? Object.freeze({
+          ...state.pendingSkavenMovement,
+          remainingPath: Object.freeze(
+            state.pendingSkavenMovement.remainingPath.map(freezePosition)
+          ),
+        })
+      : null,
     pendingNoise: state.pendingNoise ? freezePendingNoise(state.pendingNoise) : null,
     pendingReact: state.pendingReact ? Object.freeze({ ...state.pendingReact }) : null,
     remainingNoiseBag: Object.freeze([...state.remainingNoiseBag]),
@@ -579,6 +678,11 @@ export const createInitialGameState = (mission: MissionDefinition): GameState =>
     skaven: [],
     nextSkavenSequence: 1,
     combatLog: [],
+    guards: [],
+    wards: [],
+    abilityUsage: EMPTY_ABILITY_USAGE,
+    pendingCombat: null,
+    pendingSkavenMovement: null,
     pendingNoise: null,
     nextNoiseSequence: 1,
     initialNoiseDrawsResolved: 0,
@@ -608,7 +712,15 @@ export const createInitialGameState = (mission: MissionDefinition): GameState =>
 /** Rebuild the immutable engine boundary around a JSON-deserialized saved state. */
 export const restoreGameState = (state: GameState, mission: MissionDefinition): GameState => {
   assertMissionMatches(state, mission);
-  const restored = freezeState(state);
+  // Explicit additive migration of saves written before reactive combat existed.
+  const restored = freezeState({
+    ...state,
+    guards: state.guards ?? [],
+    wards: state.wards ?? [],
+    abilityUsage: state.abilityUsage ?? EMPTY_ABILITY_USAGE,
+    pendingCombat: state.pendingCombat ?? null,
+    pendingSkavenMovement: state.pendingSkavenMovement ?? null,
+  });
   projectHeroView(restored);
   return restored;
 };
@@ -798,6 +910,7 @@ export const getLegalNoiseMovePaths = (
   state: GameState,
   mission: MissionDefinition
 ): readonly NoiseMovePath[] => {
+  if (state.pendingCombat) return Object.freeze([]);
   assertMissionMatches(state, mission);
   if (
     state.phase !== 'skaven' ||
@@ -856,6 +969,7 @@ export const getLegalNoiseMovePaths = (
 };
 
 export const getLegalReactFightOptions = (state: GameState): readonly ReactFightOption[] => {
+  if (state.pendingCombat) return Object.freeze([]);
   if (!state.pendingReact || state.command < 2 || state.revealedNoise.length > 0) {
     return Object.freeze([]);
   }
@@ -874,6 +988,7 @@ export const getLegalReactDoorOptions = (
   state: GameState,
   mission: MissionDefinition
 ): readonly ReactDoorOption[] => {
+  if (state.pendingCombat) return Object.freeze([]);
   assertMissionMatches(state, mission);
   if (!state.pendingReact || state.command < 2 || state.revealedNoise.length > 0) {
     return Object.freeze([]);
@@ -900,6 +1015,7 @@ export const getLegalSkavenMovePaths = (
   state: GameState,
   mission: MissionDefinition
 ): readonly ReachablePath[] => {
+  if (state.pendingCombat) return Object.freeze([]);
   assertMissionMatches(state, mission);
   if (
     state.phase !== 'skaven' ||
@@ -917,6 +1033,7 @@ export const getLegalSkavenMovePaths = (
 };
 
 export const getLegalSkavenFightTargetIds = (state: GameState): readonly HeroId[] => {
+  if (state.pendingCombat) return Object.freeze([]);
   if (
     state.phase !== 'skaven' ||
     (state.skavenTurnStep !== 'activate-skaven' && state.skavenTurnStep !== 'activate-noise') ||
@@ -944,6 +1061,7 @@ export const getLegalSkavenDoorInteractions = (
   state: GameState,
   mission: MissionDefinition
 ): readonly Position[] => {
+  if (state.pendingCombat) return Object.freeze([]);
   assertMissionMatches(state, mission);
   if (
     state.phase !== 'skaven' ||
@@ -971,6 +1089,7 @@ export const getLegalSkavenDoorInteractions = (
 };
 
 export const getLegalFightTargetIds = (state: GameState): readonly string[] => {
+  if (state.pendingCombat) return Object.freeze([]);
   if (
     state.phase !== 'hero' ||
     !state.activeHeroId ||
@@ -1000,6 +1119,7 @@ export const getLegalSkavenPlacementPositions = (
   noiseId: string
 ): readonly Position[] => {
   assertMissionMatches(state, mission);
+  if (state.pendingCombat) return Object.freeze([]);
   const noise = state.revealedNoise.find(candidate => candidate.id === noiseId);
   if (!noise || noise.remainingModels.length === 0) return Object.freeze([]);
 
@@ -1049,6 +1169,7 @@ export const getLegalHeroMovePaths = (
   state: GameState,
   mission: MissionDefinition
 ): readonly ReachablePath[] => {
+  if (state.pendingCombat) return Object.freeze([]);
   assertMissionMatches(state, mission);
   if (
     state.phase !== 'hero' ||
@@ -1070,6 +1191,7 @@ export const getLegalDoorInteractions = (
   state: GameState,
   mission: MissionDefinition
 ): readonly Position[] => {
+  if (state.pendingCombat) return Object.freeze([]);
   assertMissionMatches(state, mission);
   if (
     state.phase !== 'hero' ||
@@ -1485,6 +1607,7 @@ const startHeroActivation = (
     state: freezeState({
       ...state,
       activeHeroId: hero.id,
+      guards: state.guards.filter(id => id !== hero.id),
       actionsRemaining: actions,
       movementRemaining: movement,
       facingChangeAvailable: true,
@@ -1492,6 +1615,9 @@ const startHeroActivation = (
       pushUsed: false,
     }),
     events: Object.freeze([
+      ...(state.guards.includes(hero.id)
+        ? [Object.freeze({ type: 'guard-expired' as const, heroId: hero.id })]
+        : []),
       Object.freeze({
         type: 'hero-activation-started' as const,
         heroId: hero.id,
@@ -1712,7 +1838,8 @@ const interactDoor = (
 const placeRevealedSkaven = (
   state: GameState,
   command: Extract<GameCommand, { type: 'place-revealed-skaven' }>,
-  mission: MissionDefinition
+  mission: MissionDefinition,
+  randomSource: RandomSource
 ): CommandResult => {
   const noise = state.revealedNoise.find(candidate => candidate.id === command.noiseId);
   if (!noise) {
@@ -1769,8 +1896,14 @@ const placeRevealedSkaven = (
           .filter(candidate => candidate.sourceNoiseId === noise.id)
           .map(candidate => candidate.id)
       : state.noiseActionIds;
+  const guardWillTrigger = state.heroes.some(
+    hero =>
+      state.guards.includes(hero.id) &&
+      isHeroEligible(state, hero) &&
+      inFrontArc(hero, skaven.position)
+  );
   const pendingReact: ReactWindow | null =
-    resolvedActiveNoise && state.command >= 2
+    resolvedActiveNoise && state.command >= 2 && !guardWillTrigger
       ? Object.freeze({ source: 'noise', sourceId: noise.id })
       : state.pendingReact;
   if (pendingReact && pendingReact !== state.pendingReact) {
@@ -1792,6 +1925,8 @@ const placeRevealedSkaven = (
       ? [...state.activatedSkavenIds, skavenId]
       : state.activatedSkavenIds,
   };
+  const guarded = triggerGuard(nextState, skavenId, randomSource);
+  if (guarded) return commandResult(guarded.state, [...events, ...guarded.events]);
   if (resolvedActiveNoise && doorActivationEnded && !pendingReact) {
     const finished = finishNoiseActivation(nextState, noise.id);
     nextState = finished.state;
@@ -1830,113 +1965,7 @@ const fightSkaven = (
     throw new RulesError('FIGHT_TARGET_NOT_ADJACENT', 'Fight an adjacent Skaven model');
   }
 
-  const { heroRolls, skavenRolls, outcome } = resolveOpposedRoll(
-    HERO_DEFINITIONS[hero.definitionId].stats.fight,
-    SKAVEN_DEFINITIONS[skaven.definitionId].stats.fight,
-    randomSource
-  );
-  const combatResult = freezeCombatResult({
-    heroId: hero.id,
-    skavenId: skaven.id,
-    skavenDefinitionId: skaven.definitionId,
-    heroRolls,
-    skavenRolls,
-    outcome,
-  });
-  const events: GameEvent[] = [Object.freeze({ type: 'fight-rolled' as const, ...combatResult })];
-  let heroes = state.heroes;
-  let skavenModels = state.skaven;
-
-  if (outcome === 'hero-won') {
-    const woundsRemaining = Math.max(0, skaven.woundsRemaining - 1);
-    events.push(
-      Object.freeze({
-        type: 'model-wounded' as const,
-        faction: 'skaven' as const,
-        modelId: skaven.id,
-        woundsRemaining,
-      })
-    );
-    skavenModels =
-      woundsRemaining === 0
-        ? state.skaven.filter(candidate => candidate.id !== skaven.id)
-        : state.skaven.map(candidate =>
-            candidate.id === skaven.id ? { ...candidate, woundsRemaining } : candidate
-          );
-    if (woundsRemaining === 0) {
-      events.push(
-        Object.freeze({
-          type: 'model-defeated' as const,
-          faction: 'skaven' as const,
-          modelId: skaven.id,
-        })
-      );
-    }
-  } else if (outcome === 'skaven-won') {
-    const woundsRemaining = Math.max(0, hero.woundsRemaining - 1);
-    events.push(
-      Object.freeze({
-        type: 'model-wounded' as const,
-        faction: 'hero' as const,
-        modelId: hero.id,
-        woundsRemaining,
-      })
-    );
-    heroes = state.heroes.map(candidate =>
-      candidate.id === hero.id
-        ? {
-            ...candidate,
-            woundsRemaining,
-            position: woundsRemaining === 0 ? null : candidate.position,
-          }
-        : candidate
-    );
-    if (woundsRemaining === 0) {
-      events.push(
-        Object.freeze({
-          type: 'model-defeated' as const,
-          faction: 'hero' as const,
-          modelId: hero.id,
-        }),
-        Object.freeze({ type: 'hero-activation-ended' as const, heroId: hero.id })
-      );
-      return Object.freeze({
-        state: freezeState({
-          ...state,
-          heroes,
-          combatLog: [...state.combatLog, combatResult],
-          activeHeroId: null,
-          actionsRemaining: null,
-          movementRemaining: null,
-          facingChangeAvailable: false,
-          dashUsed: false,
-          pushUsed: false,
-          activatedHeroIds: [...state.activatedHeroIds, hero.id],
-        }),
-        events: Object.freeze(events),
-      });
-    }
-  }
-
-  const actionsRemaining = state.actionsRemaining! - 1;
-  events.push(
-    Object.freeze({
-      type: 'action-spent' as const,
-      heroId: hero.id,
-      action: 'fight' as const,
-      actionsRemaining,
-    })
-  );
-  return Object.freeze({
-    state: freezeState({
-      ...state,
-      heroes,
-      skaven: skavenModels,
-      combatLog: [...state.combatLog, combatResult],
-      actionsRemaining,
-    }),
-    events: Object.freeze(events),
-  });
+  return beginCombat(state, hero, skaven, 'hero', randomSource);
 };
 
 const endHeroActivation = (
@@ -2143,7 +2172,8 @@ const startSkavenActivation = (
 const moveSkaven = (
   state: GameState,
   command: Extract<GameCommand, { type: 'move-skaven' }>,
-  mission: MissionDefinition
+  mission: MissionDefinition,
+  randomSource: RandomSource
 ): CommandResult => {
   const skaven = getActiveSkaven(state, command.skavenId);
   if ((state.skavenMovementRemaining ?? 0) < 1) {
@@ -2159,55 +2189,13 @@ const moveSkaven = (
     );
   }
 
-  const destination = command.path.at(-1) ?? skaven.position;
-  const events: GameEvent[] = [];
-  let from = skaven.position;
-  for (const rawStep of command.path) {
-    const step = freezePosition(rawStep);
-    events.push(
-      Object.freeze({
-        type: 'skaven-moved' as const,
-        skavenId: skaven.id,
-        from: freezePosition(from),
-        to: step,
-      })
-    );
-    from = step;
-  }
-  if (skaven.facing !== command.facing) {
-    events.push(
-      Object.freeze({
-        type: 'skaven-facing-changed' as const,
-        skavenId: skaven.id,
-        facing: command.facing,
-      })
-    );
-  }
-  events.push(
-    Object.freeze({
-      type: 'skaven-movement-completed' as const,
-      skavenId: skaven.id,
-      spaces: command.path.length,
-    })
-  );
-  const pendingReact: ReactWindow | null =
-    state.command >= 2 ? Object.freeze({ source: 'skaven', sourceId: skaven.id }) : null;
-  if (pendingReact) {
-    events.push(Object.freeze({ type: 'react-window-opened' as const, source: 'skaven' as const }));
-  }
-  return Object.freeze({
-    state: freezeState({
-      ...state,
-      skaven: state.skaven.map(candidate =>
-        candidate.id === skaven.id
-          ? { ...candidate, position: destination, facing: command.facing }
-          : candidate
-      ),
-      skavenMovementRemaining: 0,
-      pendingReact,
-    }),
-    events: Object.freeze(events),
-  });
+  const pendingSkavenMovement: PendingSkavenMovement = {
+    skavenId: skaven.id,
+    remainingPath: command.path,
+    facing: command.facing,
+    spacesMoved: 0,
+  };
+  return continueSkavenMovement({ ...state, pendingSkavenMovement }, mission, randomSource);
 };
 
 const assertSkavenActionAvailable = (state: GameState) => {
@@ -2333,102 +2321,7 @@ const fightHero = (
     throw new RulesError('FIGHT_TARGET_NOT_ADJACENT', 'Fight an adjacent hero');
   }
 
-  const { heroRolls, skavenRolls, outcome } = resolveOpposedRoll(
-    HERO_DEFINITIONS[hero.definitionId].stats.fight,
-    SKAVEN_DEFINITIONS[skaven.definitionId].stats.fight,
-    randomSource
-  );
-  const combatResult = freezeCombatResult({
-    heroId: hero.id,
-    skavenId: skaven.id,
-    skavenDefinitionId: skaven.definitionId,
-    heroRolls,
-    skavenRolls,
-    outcome,
-  });
-  const events: GameEvent[] = [Object.freeze({ type: 'fight-rolled' as const, ...combatResult })];
-  let heroes = state.heroes;
-  let skavenModels = state.skaven;
-
-  if (outcome === 'hero-won') {
-    const woundsRemaining = Math.max(0, skaven.woundsRemaining - 1);
-    events.push(
-      Object.freeze({
-        type: 'model-wounded' as const,
-        faction: 'skaven' as const,
-        modelId: skaven.id,
-        woundsRemaining,
-      })
-    );
-    skavenModels =
-      woundsRemaining === 0
-        ? state.skaven.filter(candidate => candidate.id !== skaven.id)
-        : state.skaven.map(candidate =>
-            candidate.id === skaven.id ? { ...candidate, woundsRemaining } : candidate
-          );
-    if (woundsRemaining === 0) {
-      events.push(
-        Object.freeze({
-          type: 'model-defeated' as const,
-          faction: 'skaven' as const,
-          modelId: skaven.id,
-        })
-      );
-    }
-  } else if (outcome === 'skaven-won') {
-    const woundsRemaining = Math.max(0, hero.woundsRemaining - 1);
-    events.push(
-      Object.freeze({
-        type: 'model-wounded' as const,
-        faction: 'hero' as const,
-        modelId: hero.id,
-        woundsRemaining,
-      })
-    );
-    heroes = state.heroes.map(candidate =>
-      candidate.id === hero.id
-        ? {
-            ...candidate,
-            woundsRemaining,
-            position: woundsRemaining === 0 ? null : candidate.position,
-          }
-        : candidate
-    );
-    if (woundsRemaining === 0) {
-      events.push(
-        Object.freeze({
-          type: 'model-defeated' as const,
-          faction: 'hero' as const,
-          modelId: hero.id,
-        })
-      );
-    }
-  }
-
-  const actionEvent = Object.freeze({
-    type: 'skaven-action-spent' as const,
-    skavenId: skaven.id,
-    action: 'fight' as const,
-    actionsRemaining: 0,
-  });
-  const nextState: GameState = {
-    ...state,
-    heroes,
-    skaven: skavenModels,
-    combatLog: [...state.combatLog, combatResult],
-    skavenActionsRemaining: 0,
-  };
-  if (outcome === 'hero-won' && !skavenModels.some(candidate => candidate.id === skaven.id)) {
-    const finished = finishSkavenActivation(nextState, skaven.id);
-    return Object.freeze({
-      state: freezeState(finished.state),
-      events: Object.freeze([...events, actionEvent, ...finished.events]),
-    });
-  }
-  return Object.freeze({
-    state: freezeState(nextState),
-    events: Object.freeze([...events, actionEvent]),
-  });
+  return beginCombat(state, hero, skaven, 'skaven', randomSource);
 };
 
 const interactDoorSkaven = (
@@ -2566,95 +2459,7 @@ const reactFightSkaven = (
       'React with Fight against an adjacent Skaven'
     );
   }
-  const { heroRolls, skavenRolls, outcome } = resolveOpposedRoll(
-    HERO_DEFINITIONS[hero.definitionId].stats.fight,
-    SKAVEN_DEFINITIONS[skaven.definitionId].stats.fight,
-    randomSource
-  );
-  const combatResult = freezeCombatResult({
-    heroId: hero.id,
-    skavenId: skaven.id,
-    skavenDefinitionId: skaven.definitionId,
-    heroRolls,
-    skavenRolls,
-    outcome,
-  });
-  const events: GameEvent[] = [Object.freeze({ type: 'fight-rolled' as const, ...combatResult })];
-  let heroes = state.heroes;
-  let skavenModels = state.skaven;
-  if (outcome === 'hero-won') {
-    const woundsRemaining = Math.max(0, skaven.woundsRemaining - 1);
-    events.push(
-      Object.freeze({
-        type: 'model-wounded' as const,
-        faction: 'skaven' as const,
-        modelId: skaven.id,
-        woundsRemaining,
-      })
-    );
-    skavenModels =
-      woundsRemaining === 0
-        ? state.skaven.filter(candidate => candidate.id !== skaven.id)
-        : state.skaven.map(candidate =>
-            candidate.id === skaven.id ? { ...candidate, woundsRemaining } : candidate
-          );
-    if (woundsRemaining === 0) {
-      events.push(
-        Object.freeze({
-          type: 'model-defeated' as const,
-          faction: 'skaven' as const,
-          modelId: skaven.id,
-        })
-      );
-    }
-  } else if (outcome === 'skaven-won') {
-    const woundsRemaining = Math.max(0, hero.woundsRemaining - 1);
-    heroes = state.heroes.map(candidate =>
-      candidate.id === hero.id
-        ? {
-            ...candidate,
-            woundsRemaining,
-            position: woundsRemaining === 0 ? null : candidate.position,
-          }
-        : candidate
-    );
-    events.push(
-      Object.freeze({
-        type: 'model-wounded' as const,
-        faction: 'hero' as const,
-        modelId: hero.id,
-        woundsRemaining,
-      })
-    );
-    if (woundsRemaining === 0) {
-      events.push(
-        Object.freeze({
-          type: 'model-defeated' as const,
-          faction: 'hero' as const,
-          modelId: hero.id,
-        })
-      );
-    }
-  }
-  const commandRemaining = state.command - 2;
-  events.push(
-    Object.freeze({
-      type: 'hero-reacted' as const,
-      heroId: hero.id,
-      action: 'fight' as const,
-      commandRemaining,
-    })
-  );
-  return finishReact(
-    {
-      ...state,
-      heroes,
-      skaven: skavenModels,
-      combatLog: [...state.combatLog, combatResult],
-      command: commandRemaining,
-    },
-    events
-  );
+  return beginCombat(state, hero, skaven, 'react', randomSource);
 };
 
 const reactInteractDoor = (
@@ -3041,6 +2846,475 @@ const placeReinforcementNoise = (
   return Object.freeze({ state: freezeState(nextState), events: Object.freeze(events) });
 };
 
+const freezeEvent = (event: GameEvent): GameEvent => {
+  const clone = structuredClone(event);
+  const freeze = (value: unknown): void => {
+    if (!value || typeof value !== 'object') return;
+    Object.values(value).forEach(freeze);
+    Object.freeze(value);
+  };
+  freeze(clone);
+  return clone;
+};
+
+const commandResult = (state: GameState, events: readonly GameEvent[]): CommandResult =>
+  Object.freeze({
+    state: freezeState(state),
+    events: Object.freeze(events.map(event => freezeEvent(event))),
+  });
+
+const guardHero = (
+  state: GameState,
+  command: Extract<GameCommand, { type: 'guard-hero' }>
+): CommandResult => {
+  const hero = getActiveHero(state, command.heroId);
+  assertActionAvailable(state);
+  const placed = {
+    ...state,
+    guards: [...state.guards.filter(id => id !== hero.id), hero.id],
+    actionsRemaining: 0,
+  };
+  const ended = endHeroActivation(placed, {
+    type: 'end-hero-activation',
+    heroId: hero.id,
+    confirmed: true,
+  });
+  return commandResult(ended.state, [
+    { type: 'action-spent', heroId: hero.id, action: 'guard', actionsRemaining: 0 },
+    { type: 'guard-placed', heroId: hero.id },
+    ...ended.events,
+  ]);
+};
+
+const wardHero = (
+  state: GameState,
+  command: Extract<GameCommand, { type: 'ward-hero' | 'react-ward-hero' }>
+): CommandResult => {
+  const reacting = command.type === 'react-ward-hero';
+  const hero = reacting
+    ? getReactingHero(state, command.heroId)
+    : getActiveHero(state, command.heroId);
+  if (!reacting) assertActionAvailable(state);
+  if (hero.definitionId !== 'maximilian')
+    throw new RulesError('ABILITY_NOT_AVAILABLE', 'Only Maximilian can place a Ward');
+  const target = state.heroes.find(candidate => candidate.id === command.targetHeroId);
+  if (
+    !target ||
+    !isHeroEligible(state, target) ||
+    !hero.position ||
+    !target.position ||
+    distance(hero.position, target.position) > 3
+  ) {
+    throw new RulesError('INVALID_WARD_TARGET', 'Choose a living hero within 3 squares');
+  }
+  if (state.wards.includes(target.id))
+    throw new RulesError('WARD_ALREADY_PRESENT', 'This hero already has a Ward');
+  if (reacting)
+    return finishReact(
+      { ...state, wards: [...state.wards, target.id], command: state.command - 2 },
+      [
+        { type: 'ward-placed', heroId: target.id },
+        {
+          type: 'hero-reacted',
+          heroId: hero.id,
+          action: 'ward',
+          commandRemaining: state.command - 2,
+        },
+      ]
+    );
+  const actionsRemaining = state.actionsRemaining! - 1;
+  return commandResult({ ...state, wards: [...state.wards, target.id], actionsRemaining }, [
+    { type: 'action-spent', heroId: hero.id, action: 'ward', actionsRemaining },
+    { type: 'ward-placed', heroId: target.id },
+  ]);
+};
+
+const beginCombat = (
+  state: GameState,
+  hero: HeroState,
+  skaven: SkavenState,
+  source: PendingCombat['source'],
+  randomSource: RandomSource
+): CommandResult => {
+  const { heroDice, skavenDice } = getFightDice(state, hero, skaven, source === 'skaven');
+  const roll = resolveOpposedRoll(heroDice, skavenDice, randomSource);
+  const pendingCombat: PendingCombat = {
+    ...roll,
+    heroId: hero.id,
+    skavenId: skaven.id,
+    skavenDefinitionId: skaven.definitionId,
+    source,
+    stage: 'rerolls',
+    rerolledDice: [],
+  };
+  const nextState = { ...state, pendingCombat };
+  if (hasRerollChoice(nextState, pendingCombat)) {
+    return commandResult(nextState, [
+      { type: 'fight-choice-opened', heroId: hero.id, stage: 'rerolls' },
+    ]);
+  }
+  return acceptFightRolls(nextState, randomSource);
+};
+
+const hasRerollChoice = (state: GameState, combat: PendingCombat): boolean =>
+  combat.outcome !== 'hero-won' &&
+  combat.heroRolls.some((_, index) => !combat.rerolledDice.includes(index)) &&
+  getRerollAbilities(state, combat.heroId).length > 0;
+
+const requireCombat = (state: GameState, stage: PendingCombat['stage']): PendingCombat => {
+  if (!state.pendingCombat) throw new RulesError('NO_PENDING_COMBAT', 'There is no pending Fight');
+  if (state.pendingCombat.stage !== stage)
+    throw new RulesError(
+      'COMBAT_CHOICE_REQUIRED',
+      `Resolve the ${state.pendingCombat.stage} choice first`
+    );
+  return state.pendingCombat;
+};
+
+const rerollFightDie = (
+  state: GameState,
+  command: Extract<GameCommand, { type: 'reroll-fight-die' }>,
+  randomSource: RandomSource
+): CommandResult => {
+  const combat = requireCombat(state, 'rerolls');
+  const index = command.dieIndex;
+  if (
+    !hasRerollChoice(state, combat) ||
+    !getRerollAbilities(state, combat.heroId).includes(command.ability) ||
+    !Number.isInteger(index) ||
+    index < 0 ||
+    index >= combat.heroRolls.length ||
+    combat.rerolledDice.includes(index)
+  ) {
+    throw new RulesError(
+      'INVALID_REROLL',
+      'Choose an available ability and a Fight die that has not been rerolled'
+    );
+  }
+  const value = rollDice(1, randomSource)[0]!;
+  const heroRolls = combat.heroRolls.map((die, dieIndex) => (dieIndex === index ? value : die));
+  const abilityUsage = {
+    ...state.abilityUsage,
+    [command.ability === 'karaghul' ? 'karaghulRound' : 'remembererRound']: state.round,
+  };
+  const pendingCombat: PendingCombat = {
+    ...combat,
+    heroRolls,
+    outcome: fightOutcome(heroRolls, combat.skavenRolls),
+    rerolledDice: [...combat.rerolledDice, index],
+    rerolls: [
+      ...(combat.rerolls ?? []),
+      {
+        ability: command.ability,
+        dieIndices: [index],
+        previousRolls: [combat.heroRolls[index]!],
+        rolls: [value],
+      },
+    ],
+  };
+  const nextState = { ...state, abilityUsage, pendingCombat };
+  const event: GameEvent = {
+    type: 'fight-dice-rerolled',
+    heroId: combat.heroId,
+    ability: command.ability,
+    dieIndices: [index],
+    rolls: [value],
+  };
+  if (hasRerollChoice(nextState, pendingCombat)) return commandResult(nextState, [event]);
+  const finished = acceptFightRolls(nextState, randomSource);
+  return commandResult(finished.state, [event, ...finished.events]);
+};
+
+const acceptFightRolls = (state: GameState, randomSource: RandomSource): CommandResult => {
+  const combat = requireCombat(state, 'rerolls');
+  if (combat.outcome === 'skaven-won' && state.wards.includes(combat.heroId)) {
+    return commandResult({ ...state, pendingCombat: { ...combat, stage: 'ward' } }, [
+      { type: 'fight-choice-opened', heroId: combat.heroId, stage: 'ward' },
+    ]);
+  }
+  return finishCombat(state, randomSource);
+};
+
+const resolveWard = (state: GameState, randomSource: RandomSource): CommandResult => {
+  const combat = requireCombat(state, 'ward');
+  const indices = combat.heroRolls.flatMap((_, index) =>
+    combat.rerolledDice.includes(index) ? [] : [index]
+  );
+  const values = indices.length > 0 ? rollDice(indices.length, randomSource) : [];
+  const heroRolls = [...combat.heroRolls];
+  indices.forEach((index, valueIndex) => {
+    heroRolls[index] = values[valueIndex]!;
+  });
+  const nextState: GameState = {
+    ...state,
+    wards: state.wards.filter(id => id !== combat.heroId),
+    pendingCombat: {
+      ...combat,
+      heroRolls,
+      outcome: fightOutcome(heroRolls, combat.skavenRolls),
+      rerolledDice: [...combat.rerolledDice, ...indices],
+      rerolls: [
+        ...(combat.rerolls ?? []),
+        {
+          ability: 'ward',
+          dieIndices: indices,
+          previousRolls: indices.map(index => combat.heroRolls[index]!),
+          rolls: values,
+        },
+      ],
+    },
+  };
+  const finished = finishCombat(nextState, randomSource);
+  return commandResult(finished.state, [
+    { type: 'ward-consumed', heroId: combat.heroId },
+    {
+      type: 'fight-dice-rerolled',
+      heroId: combat.heroId,
+      ability: 'ward',
+      dieIndices: indices,
+      rolls: values,
+    },
+    ...finished.events,
+  ]);
+};
+
+const finishCombat = (state: GameState, randomSource: RandomSource): CommandResult => {
+  const combat = state.pendingCombat;
+  if (!combat) throw new RulesError('NO_PENDING_COMBAT', 'There is no Fight to finish');
+  const hero = state.heroes.find(candidate => candidate.id === combat.heroId)!;
+  const skaven = state.skaven.find(candidate => candidate.id === combat.skavenId)!;
+  let result: CombatResult = {
+    ...(combat.rerolls ? { rerolls: combat.rerolls } : {}),
+    heroId: hero.id,
+    skavenId: skaven.id,
+    skavenDefinitionId: skaven.definitionId,
+    heroRolls: combat.heroRolls,
+    skavenRolls: combat.skavenRolls,
+    outcome: combat.outcome,
+  };
+  const events: GameEvent[] = [{ type: 'fight-rolled', ...result }];
+  let next: GameState = { ...state, pendingCombat: null, combatLog: [...state.combatLog, result] };
+  let heroDefeated = false;
+  let skavenDefeated = false;
+  if (combat.outcome !== 'tie') {
+    const heroLoses = combat.outcome === 'skaven-won';
+    const damage = heroLoses && skaven.definitionId === 'rat-ogor' ? 2 : 1;
+    let woundsRemaining = Math.max(
+      0,
+      (heroLoses ? hero.woundsRemaining : skaven.woundsRemaining) - damage
+    );
+    if (
+      heroLoses &&
+      woundsRemaining === 0 &&
+      hero.definitionId === 'snorri' &&
+      !state.abilityUsage.snorriSaved
+    ) {
+      woundsRemaining = 1;
+      next = { ...next, abilityUsage: { ...next.abilityUsage, snorriSaved: true } };
+      events.push({ type: 'snorri-saved', heroId: hero.id });
+    }
+    const woundsInflicted =
+      next.abilityUsage.snorriSaved !== state.abilityUsage.snorriSaved
+        ? hero.woundsRemaining - woundsRemaining
+        : damage;
+    if (woundsInflicted !== 1) result = { ...result, woundsInflicted };
+    const modelId = heroLoses ? hero.id : skaven.id;
+    const faction = heroLoses ? 'hero' : 'skaven';
+    events.push({ type: 'model-wounded', modelId, faction, woundsRemaining });
+    if (heroLoses) {
+      heroDefeated = woundsRemaining === 0;
+      next = {
+        ...next,
+        heroes: next.heroes.map(candidate =>
+          candidate.id === hero.id
+            ? { ...candidate, woundsRemaining, position: heroDefeated ? null : candidate.position }
+            : candidate
+        ),
+      };
+      if (heroDefeated)
+        next = {
+          ...next,
+          guards: next.guards.filter(id => id !== hero.id),
+          wards: next.wards.filter(id => id !== hero.id),
+        };
+    } else {
+      skavenDefeated = woundsRemaining === 0;
+      next = {
+        ...next,
+        skaven: skavenDefeated
+          ? next.skaven.filter(candidate => candidate.id !== skaven.id)
+          : next.skaven.map(candidate =>
+              candidate.id === skaven.id ? { ...candidate, woundsRemaining } : candidate
+            ),
+      };
+    }
+    if (woundsRemaining === 0) events.push({ type: 'model-defeated', modelId, faction });
+  }
+  events[0] = { type: 'fight-rolled', ...result };
+  next = { ...next, combatLog: [...state.combatLog, result] };
+  if (combat.source === 'hero') {
+    if (heroDefeated) {
+      next = {
+        ...next,
+        activeHeroId: null,
+        actionsRemaining: null,
+        movementRemaining: null,
+        facingChangeAvailable: false,
+        dashUsed: false,
+        pushUsed: false,
+        activatedHeroIds: [...next.activatedHeroIds, hero.id],
+      };
+      events.push({ type: 'hero-activation-ended', heroId: hero.id });
+    } else {
+      const actionsRemaining = next.actionsRemaining! - 1;
+      next = { ...next, actionsRemaining };
+      events.push({ type: 'action-spent', heroId: hero.id, action: 'fight', actionsRemaining });
+    }
+  } else if (combat.source === 'skaven') {
+    next = { ...next, skavenActionsRemaining: 0 };
+    events.push({
+      type: 'skaven-action-spent',
+      skavenId: skaven.id,
+      action: 'fight',
+      actionsRemaining: 0,
+    });
+    if (skavenDefeated) {
+      const finished = finishSkavenActivation(next, skaven.id);
+      next = finished.state;
+      events.push(...finished.events);
+    }
+  } else if (combat.source === 'react') {
+    next = { ...next, command: next.command - 2 };
+    events.push({
+      type: 'hero-reacted',
+      heroId: hero.id,
+      action: 'fight',
+      commandRemaining: next.command,
+    });
+    return finishReact(next, events);
+  } else if (combat.source === 'guard') {
+    if (skavenDefeated && next.pendingSkavenMovement) {
+      next = { ...next, pendingSkavenMovement: null };
+      const finished = finishSkavenActivation(next, skaven.id);
+      return commandResult(finished.state, [...events, ...finished.events]);
+    }
+    const anotherGuard = skavenDefeated ? null : triggerGuard(next, skaven.id, randomSource);
+    if (anotherGuard) return commandResult(anotherGuard.state, [...events, ...anotherGuard.events]);
+    if (next.pendingSkavenMovement) {
+      const resumed = continueSkavenMovement(
+        next,
+        getMissionDefinition(next.missionId),
+        randomSource
+      );
+      return commandResult(resumed.state, [...events, ...resumed.events]);
+    }
+    const placed = finishGuardPlacement(next, skaven.sourceNoiseId);
+    return commandResult(placed.state, [...events, ...placed.events]);
+  }
+  return commandResult(next, events);
+};
+
+const finishGuardPlacement = (state: GameState, noiseId: string): CommandResult => {
+  if (state.revealedNoise.some(noise => noise.id === noiseId)) return commandResult(state, []);
+  if (
+    state.skavenTurnStep === 'reinforce' &&
+    state.revealedNoise.length === 0 &&
+    state.reinforcementDrawsResolved >= getMissionDefinition(state.missionId).noisePerTurn
+  ) {
+    const completed = completeReinforcement(state);
+    return commandResult(completed.state, completed.events);
+  }
+  if (state.skavenTurnStep === 'activate-noise' && state.activeNoiseId === noiseId) {
+    if (state.command >= 2)
+      return commandResult({ ...state, pendingReact: { source: 'noise', sourceId: noiseId } }, [
+        { type: 'react-window-opened', source: 'noise' },
+      ]);
+    if (
+      state.activatedNoiseIds.includes(noiseId) ||
+      state.noiseActionIds.every(id => !state.skaven.some(skaven => skaven.id === id))
+    )
+      return finishNoiseActivation(state, noiseId);
+  }
+  return commandResult(state, []);
+};
+
+const triggerGuard = (
+  state: GameState,
+  skavenId: string,
+  randomSource: RandomSource
+): CommandResult | null => {
+  const skaven = state.skaven.find(candidate => candidate.id === skavenId);
+  if (!skaven) return null;
+  // Simultaneous Guards resolve in the selected roster order, independent of placement order.
+  const hero = state.heroes.find(
+    candidate =>
+      state.guards.includes(candidate.id) &&
+      isHeroEligible(state, candidate) &&
+      inFrontArc(candidate, skaven.position)
+  );
+  if (!hero) return null;
+  const guarded = { ...state, guards: state.guards.filter(id => id !== hero.id) };
+  const fought = beginCombat(guarded, hero, skaven, 'guard', randomSource);
+  return commandResult(fought.state, [
+    { type: 'guard-triggered', heroId: hero.id },
+    ...fought.events,
+  ]);
+};
+
+const continueSkavenMovement = (
+  state: GameState,
+  mission: MissionDefinition,
+  randomSource: RandomSource
+): CommandResult => {
+  const movement = state.pendingSkavenMovement;
+  if (!movement) throw new Error('A movement continuation requires a submitted path');
+  const skaven = state.skaven.find(candidate => candidate.id === movement.skavenId);
+  if (!skaven) throw new Error('The moving Skaven must exist');
+  let next: GameState = state;
+  const events: GameEvent[] = [];
+  let from = skaven.position;
+  for (let index = 0; index < movement.remainingPath.length; index++) {
+    const to = movement.remainingPath[index]!;
+    next = {
+      ...next,
+      skaven: next.skaven.map(candidate =>
+        candidate.id === skaven.id ? { ...candidate, position: to } : candidate
+      ),
+      pendingSkavenMovement: {
+        ...movement,
+        remainingPath: movement.remainingPath.slice(index + 1),
+        spacesMoved: movement.spacesMoved + index + 1,
+      },
+    };
+    events.push({ type: 'skaven-moved', skavenId: skaven.id, from, to });
+    const guarded = triggerGuard(next, skaven.id, randomSource);
+    if (guarded) return commandResult(guarded.state, [...events, ...guarded.events]);
+    from = to;
+  }
+  if (skaven.facing !== movement.facing)
+    events.push({ type: 'skaven-facing-changed', skavenId: skaven.id, facing: movement.facing });
+  events.push({
+    type: 'skaven-movement-completed',
+    skavenId: skaven.id,
+    spaces: movement.spacesMoved + movement.remainingPath.length,
+  });
+  const pendingReact: ReactWindow | null =
+    next.command >= 2 ? { source: 'skaven', sourceId: skaven.id } : null;
+  if (pendingReact) events.push({ type: 'react-window-opened', source: 'skaven' });
+  return commandResult(
+    {
+      ...next,
+      skaven: next.skaven.map(candidate =>
+        candidate.id === skaven.id ? { ...candidate, facing: movement.facing } : candidate
+      ),
+      pendingSkavenMovement: null,
+      skavenMovementRemaining: 0,
+      pendingReact,
+    },
+    events
+  );
+};
+
 export const resolveCommand = (
   state: GameState,
   command: GameCommand,
@@ -3048,7 +3322,24 @@ export const resolveCommand = (
 ): CommandResult => {
   const mission = getMissionDefinition(state.missionId);
   assertMissionMatches(state, mission);
+  if (
+    state.pendingCombat &&
+    !['reroll-fight-die', 'accept-fight-rolls', 'resolve-ward'].includes(command.type)
+  ) {
+    throw new RulesError('COMBAT_CHOICE_REQUIRED', 'Resolve the pending Fight before continuing');
+  }
   switch (command.type) {
+    case 'guard-hero':
+      return guardHero(state, command);
+    case 'ward-hero':
+    case 'react-ward-hero':
+      return wardHero(state, command);
+    case 'reroll-fight-die':
+      return rerollFightDie(state, command, randomSource);
+    case 'accept-fight-rolls':
+      return acceptFightRolls(state, randomSource);
+    case 'resolve-ward':
+      return resolveWard(state, randomSource);
     case 'configure-game':
       return configureGame(state, command, mission);
     case 'deploy-hero':
@@ -3068,7 +3359,7 @@ export const resolveCommand = (
     case 'interact-door':
       return interactDoor(state, command, mission);
     case 'place-revealed-skaven':
-      return placeRevealedSkaven(state, command, mission);
+      return placeRevealedSkaven(state, command, mission, randomSource);
     case 'fight-skaven':
       return fightSkaven(state, command, randomSource);
     case 'end-hero-activation':
@@ -3078,7 +3369,7 @@ export const resolveCommand = (
     case 'start-skaven-activation':
       return startSkavenActivation(state, command);
     case 'move-skaven':
-      return moveSkaven(state, command, mission);
+      return moveSkaven(state, command, mission, randomSource);
     case 'fight-hero':
       return fightHero(state, command, randomSource);
     case 'interact-door-skaven':
@@ -3161,6 +3452,23 @@ export const projectHeroView = (state: GameState): HeroGameView =>
       legalDoorInteractions: getLegalDoorInteractions(state, mission),
       legalFightTargetIds: getLegalFightTargetIds(state),
       combatLog: Object.freeze(state.combatLog.map(freezeCombatResult)),
+      guards: Object.freeze([...state.guards]),
+      wards: Object.freeze([...state.wards]),
+      abilityUsage: Object.freeze({ ...state.abilityUsage }),
+      pendingCombat: state.pendingCombat
+        ? (Object.freeze({
+            ...freezeCombatResult(state.pendingCombat),
+            rerolledDice: Object.freeze([...state.pendingCombat.rerolledDice]),
+          }) as PendingCombat)
+        : null,
+      pendingSkavenMovement: state.pendingSkavenMovement
+        ? Object.freeze({
+            ...state.pendingSkavenMovement,
+            remainingPath: Object.freeze(
+              state.pendingSkavenMovement.remainingPath.map(freezePosition)
+            ),
+          })
+        : null,
     });
   })();
 

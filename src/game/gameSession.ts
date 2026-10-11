@@ -101,37 +101,38 @@ export class GameSession {
 
   dispatch(command: GameCommand): readonly GameEvent[] {
     let result = resolveCommand(this.#state, command, this.#randomSource);
-    this.#state = result.state;
+    let nextState = result.state;
     const events = [...result.events];
 
-    while (this.#state.revealedNoise[0]) {
-      const noise = this.#state.revealedNoise[0];
-      const positions = getLegalSkavenPlacementPositions(this.#state, this.#mission, noise.id);
+    while (nextState.revealedNoise[0] && !nextState.pendingCombat) {
+      const noise = nextState.revealedNoise[0];
+      const positions = getLegalSkavenPlacementPositions(nextState, this.#mission, noise.id);
       if (positions.length !== 1) break;
 
       const position = positions[0]!;
       result = resolveCommand(
-        this.#state,
+        nextState,
         {
           type: 'place-revealed-skaven',
           noiseId: noise.id,
           position,
-          facing: this.#facingTowardNearestHero(position),
+          facing: this.#facingTowardNearestHero(position, nextState),
         },
         this.#randomSource
       );
-      this.#state = result.state;
+      nextState = result.state;
       events.push(...result.events);
     }
 
+    this.#state = nextState;
     this.#onStateChange(this.#state);
     return Object.freeze(events);
   }
 
-  #facingTowardNearestHero(position: Position): Facing {
+  #facingTowardNearestHero(position: Position, state: GameState): Facing {
     let target: Position | null = null;
     let nearestDistance = Number.POSITIVE_INFINITY;
-    for (const hero of this.#state.heroes) {
+    for (const hero of state.heroes) {
       if (!hero.position || hero.woundsRemaining <= 0) continue;
       const distance = Math.max(
         Math.abs(hero.position.row - position.row),

@@ -51,7 +51,7 @@ export const latestImportantEvent = (
     const outcome =
       event.outcome === 'tie'
         ? 'Tie; no Wound.'
-        : `${loser} suffers 1 Wound.${defeated ? ` ${loser} is defeated.` : ''}`;
+        : `${loser} suffers ${event.woundsInflicted ?? 1} ${(event.woundsInflicted ?? 1) === 1 ? 'Wound' : 'Wounds'}.${effects.some(candidate => candidate.type === 'snorri-saved') ? ' Snorri’s Not Dead! leaves him with 1 Wound.' : ''}${defeated ? ` ${loser} is defeated.` : ''}`;
     return {
       title:
         event.outcome === 'tie'

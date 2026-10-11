@@ -1,6 +1,6 @@
 # MVP Progress
 
-Last updated: 2026-09-15
+Last updated: 2026-09-17
 
 This is the handoff log for [`mvp-plan.md`](mvp-plan.md). Update it when a reviewable
 slice starts or finishes so a future turn can resume without reconstructing project state
@@ -8,10 +8,11 @@ from Git history.
 
 ## Current status
 
-The seventh reviewable slice, **Solo Skaven AI**, and the inter-slice **single-game
-persistence foundation** are complete in the working tree. Successful game transactions now
-replace one versioned local save, browser reload restores the complete immutable engine state,
-and a confirmed Quit game action clears the save and starts over.
+The eighth reviewable slice, **Reactive combat mechanics**, is complete in the working
+tree. Guard interrupts enemy movement and revealed-model placement, all Fight sources share
+contextual modifiers and damage, and rerolls / Ward remain explicit saved choices. Solo AI
+pauses for those Hero choices and resumes through Guard, React, and the round transition.
+The single-game persistence foundation also remains in place.
 
 | Slice | Status | Outcome |
 | --- | --- | --- |
@@ -23,7 +24,7 @@ and a confirmed Quit game action clears the save and starts over.
 | 6. Complete two-player Skaven turn | Complete | Revealed-model activation, React, shortest-route Noise movement, action-only revealed groups, reinforcement, and round transition |
 | 7. Solo Skaven AI | Complete | Legal attack-maximizing placement, nearest-first activations, shortest paths, attacks, Noise, and reinforcement |
 | Persistence foundation | Complete | One versioned local save, automatic resume, private-state-safe handoff, and confirmed quit/clear |
-| 8. Reactive combat mechanics | Not started | Guard, rerolls, Ward, death prevention, dice modifiers, and Rat Ogor damage |
+| 8. Reactive combat mechanics | Complete | Guard, rerolls, Ward, death prevention, dice modifiers, and Rat Ogor damage |
 | 9. Active and movement abilities | Not started | Bonus attacks/movement, ranged abilities, charges, Skitter, and Smash |
 | 10. Mission resolution and MVP hardening | Not started | Nests, exit, victory and loss, complete-game scenarios, privacy, UI, and offline verification |
 
@@ -229,6 +230,41 @@ and a confirmed Quit game action clears the save and starts over.
 - Added the storage and UUID modules to the offline application shell and bumped both service
   worker cache versions.
 
+## Completed in slice 8
+
+- Added Guard for 1 Action, ending the activation and forfeiting remaining Actions and
+  Movement as agreed. Guard expires on the hero's next activation.
+- Processed revealed Skaven Movement one square at a time. A front-arc entry consumes Guard
+  and interrupts for a free Fight; a survivor resumes the submitted path, while a defeated
+  mover ends safely without React. Side/rear movement and a zero-square hold do not trigger it.
+- Added Guard on revealed Noise model placement, resolving simultaneous Guards in roster
+  order. Placement Guards finish before React opens and before final reinforcement advances
+  the round or resets Command / round-limited ability eligibility.
+- Replaced duplicated Hero, Skaven, and React combat handlers with a shared immutable Fight
+  resolution flow, using a separate combat-rules module for dice, arcs, and reroll eligibility.
+- Applied Axe of Grimnir using printed maximum Wounds, capped Strength in Numbers while
+  attacking or defending, and Backstab only on Gutter Runner attacks from the agreed
+  three-square rear arc. Brute Strength deals and reports 2 Wounds, including while defending.
+- Added optional Karaghul / Rememberer die choices, explicit once-per-round usage, Chebyshev
+  support range, and the one-reroll-per-die restriction. Felix can support himself.
+- Added Maximilian's Ward for 1 Action or through React for 2 Command, limited to one token
+  per living hero within 3 squares. A loss consumes the Ward and rerolls only eligible dice
+  before wounds; wins and ties retain it.
+- Applied Snorri's automatic once-per-mission prevention of lethal damage, including two-Wound
+  Rat Ogor hits, leaving him at 1 Wound.
+- Saved pending Fight stages, old/new reroll results, ability usage, Guard / Ward markers, and
+  remaining interrupted movement. Existing saves receive an explicit additive migration.
+- Added Hero-only shared-device Fight handoffs and pass-back covers, semantic reroll / Ward
+  choices, visible and accessible Guard / Ward markers, complete reroll history, and accurate
+  damage highlights. Guard flows directly into React while the Hero player holds the device.
+- Kept solo AI paused at pending Hero Fight choices and resumed it through ordinary validated
+  commands after each choice.
+- Made automatic placement transactional at the session boundary: later Guard randomness
+  failures cannot partially commit an earlier movement or placement or overwrite the save.
+- Cached the new module and advanced production / development service workers to `0.1.8`.
+- Updated the tabletop rules with resolved timing and reroll conventions, and removed the
+  obsolete plan default that claimed a refresh loses the saved game.
+
 ## Verification baseline
 
 For the completed Slice 7 plus the persistence foundation:
@@ -276,6 +312,25 @@ For the completed Slice 7 plus the persistence foundation:
   No console errors occurred; the existing development service-worker warnings remain
   tracked below.
 
+## Slice 8 verification
+
+- Formatting, lint (zero warnings/errors), source/test typecheck, all 193 tests, and the
+  production build pass. The slice adds 33 regressions to the 160-test baseline.
+- Disposable browser games on an isolated local preview origin verified Guard placement and
+  activation completion, a Guard-interrupted Fight, reroll history, reload privacy, resumed
+  remaining movement, and the Rat Ogor's two-Wound damage / defeat highlight.
+- A browser Ward action spent one Action and appeared on Canvas and in the board description.
+  A winning Fight retained it; a later loss paused without wounds. Reload resumed the Ward
+  choice, its reroll produced a tie, its marker disappeared, and the combat log retained the
+  original and rerolled die values.
+- A 700 × 900 tablet viewport had no horizontal overflow (document and body widths both 700).
+  The complete board and independently scrolling controls remained visible.
+- Concealed Noise identities were absent from the Hero controls and board description; pending
+  Fight projection privacy and solo AI pause/resume are also covered by regression tests.
+- Isolated preview scenarios produced no console warnings or errors. The reused development
+  origin reproduced the previously tracked stale-response / multiple-worker behavior; those
+  service-worker follow-ups remain below.
+
 ## Known follow-up
 
 - Refresh the data-model briefs in `AGENTS.md` and `CLAUDE.md`: they still describe an
@@ -293,22 +348,11 @@ For the completed Slice 7 plus the persistence foundation:
 
 ## Proposed next slice
 
-Build Slice 8, **Reactive combat mechanics**, beginning with Guard interruption and then
-modelling rerolls, Ward, Snorri's death prevention, contextual Fight modifiers, and Rat Ogor
-damage as explicit immutable choices.
+Build Slice 9, **Active and movement abilities**: bonus attacks / movement, ranged attacks,
+Demolition Charge, Skitter, and revealed Rat Ogor Smash. Extend the saved pending-choice flow
+for each interrupting ability and keep contextual combat effects shared.
 
 ## Remaining slice breakdown
-
-### Slice 8: Reactive combat mechanics
-
-- Add Guard placement, step-by-step movement interruption, marker consumption, and expiry.
-- Add optional Fight-die rerolls from Karaghul and Rememberer, including the rule that each
-  die can be rerolled at most once.
-- Add Ward resolution and Snorri's once-per-mission death prevention.
-- Apply contextual combat effects: Axe of Grimnir, Strength in Numbers, Backstab, and Brute
-  Strength.
-- Model pending choices explicitly so interrupted combat remains immutable, transactional,
-  and visible to the correct player.
 
 ### Slice 9: Active and movement abilities
 

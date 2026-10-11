@@ -131,3 +131,145 @@ test('the board description distinguishes opened doors from doors that cannot be
   assert.match(description, /Open doors: row 7, column 5\./);
   assert.match(description, /Destroyed doors: row 15, column 7.*cannot be closed/i);
 });
+
+const contentText = (element: {
+  textContent: string | null;
+  children: ArrayLike<Element>;
+}): string =>
+  [element.textContent, ...Array.from(element.children, child => contentText(child))].join(' ');
+
+const fightView = (): import('../../src/game/gameState.ts').HeroGameView => ({
+  ...new GameSession(THE_NEST, { next: () => 0 }).heroView,
+  setupStep: 'complete',
+  phase: 'skaven',
+  mode: 'two-player',
+  round: 1,
+  skavenTurnStep: 'activate-skaven',
+  heroes: [
+    {
+      id: 'felix',
+      definitionId: 'felix',
+      position: { row: 16, column: 3 },
+      facing: 'north',
+      woundsRemaining: 2,
+    },
+  ],
+  skaven: [
+    {
+      id: 'enemy',
+      sourceNoiseId: 'old',
+      definitionId: 'rat-ogor',
+      position: { row: 15, column: 3 },
+      facing: 'south',
+      woundsRemaining: 2,
+    },
+  ],
+  pendingCombat: {
+    heroId: 'felix',
+    skavenId: 'enemy',
+    skavenDefinitionId: 'rat-ogor',
+    heroRolls: [1, 2],
+    skavenRolls: [6, 2, 1],
+    outcome: 'skaven-won',
+    source: 'guard',
+    stage: 'rerolls',
+    rerolledDice: [],
+  },
+});
+
+test('shared-device Fight choices require Hero handoff, hide turn controls, and pass back after resolution', () => {
+  const setup = new GameSetup();
+  const view = fightView();
+  setup.view = view;
+  assert.match(contentText(setup.shadowRoot!), /Hand the device to the Hero player/);
+  assert.doesNotMatch(contentText(setup.shadowRoot!), /Karaghul: reroll/);
+  setup.shadowRoot!.querySelector('button')!.dispatchEvent(new Event('click'));
+  assert.match(contentText(setup.shadowRoot!), /Karaghul: reroll die 1 \(1\)/);
+  assert.doesNotMatch(contentText(setup.shadowRoot!), /Rememberer: reroll/);
+  assert.doesNotMatch(contentText(setup.shadowRoot!), /Start activation|Reinforce|Movement ·/);
+  setup.view = { ...view, pendingCombat: null };
+  assert.match(contentText(setup.shadowRoot!), /Hand the device to the Skaven player/);
+});
+
+test('reroll buttons dispatch the die identity and disappear once that die is rerolled', () => {
+  const setup = new GameSetup();
+  const view = { ...fightView(), phase: 'hero' as const };
+  setup.view = view;
+  const commands: unknown[] = [];
+  setup.addEventListener('game-command', event => commands.push((event as CustomEvent).detail));
+  setup.shadowRoot!.querySelector('button')!.dispatchEvent(new Event('click'));
+  assert.deepEqual(commands, [{ type: 'reroll-fight-die', ability: 'karaghul', dieIndex: 0 }]);
+  setup.view = { ...view, pendingCombat: { ...view.pendingCombat!, rerolledDice: [0] } };
+  assert.doesNotMatch(contentText(setup.shadowRoot!), /reroll die 1/);
+  assert.match(contentText(setup.shadowRoot!), /reroll die 2/);
+});
+
+test('a spent Karaghul is hidden for the rest of the round, including the Skaven turn', () => {
+  const setup = new GameSetup();
+  const view = fightView();
+  setup.view = {
+    ...view,
+    abilityUsage: { ...view.abilityUsage, karaghulRound: view.round },
+  };
+  setup.shadowRoot!.querySelector('button')!.dispatchEvent(new Event('click'));
+  assert.doesNotMatch(contentText(setup.shadowRoot!), /Karaghul: reroll/);
+  assert.doesNotMatch(contentText(setup.shadowRoot!), /Rememberer: reroll/);
+});
+
+test('Ward prompts describe forced eligible dice and public combat history includes rerolls and two-wound damage', () => {
+  const setup = new GameSetup();
+  const view = fightView();
+  setup.view = { ...view, phase: 'hero', pendingCombat: { ...view.pendingCombat!, stage: 'ward' } };
+  assert.match(contentText(setup.shadowRoot!), /Resolve Ward reroll/);
+  assert.doesNotMatch(contentText(setup.shadowRoot!), /Accept Fight dice/);
+  setup.view = {
+    ...view,
+    phase: 'hero',
+    pendingCombat: null,
+    combatLog: [
+      {
+        ...newer,
+        woundsInflicted: 2,
+        rerolls: [{ ability: 'karaghul', dieIndices: [0], previousRolls: [1], rolls: [3] }],
+      },
+    ],
+  };
+  assert.match(contentText(setup.shadowRoot!), /hero suffers 2 Wounds/);
+  assert.match(contentText(setup.shadowRoot!), /karaghul: dice 1 \[1\] → \[3\]/);
+});
+
+test('Guard and Ward are present in accessible board descriptions', () => {
+  const board = new GameBoard();
+  board.heroes = [
+    {
+      label: 'Fe',
+      position: { row: 16, column: 3 },
+      facing: 'north',
+      woundsRemaining: 2,
+      woundsMaximum: 2,
+      guarded: true,
+      warded: true,
+    },
+  ];
+  assert.match(
+    board.shadowRoot!.querySelector('.description')!.textContent!,
+    /Wounds remaining, Guard, Ward/
+  );
+});
+
+test('Guard combat passes directly into React while the Hero player retains the device', () => {
+  const setup = new GameSetup();
+  const view = fightView();
+  setup.view = view;
+  setup.shadowRoot!.querySelector('button')!.dispatchEvent(new Event('click'));
+  setup.view = {
+    ...view,
+    pendingCombat: null,
+    pendingReact: { source: 'skaven', sourceId: 'enemy' },
+  };
+  assert.match(contentText(setup.shadowRoot!), /React · 2 Command/);
+  assert.doesNotMatch(
+    contentText(setup.shadowRoot!),
+    /I am the Skaven player|I am the Hero player/
+  );
+});

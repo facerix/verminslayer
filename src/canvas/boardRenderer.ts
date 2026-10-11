@@ -5,6 +5,8 @@ import type { Facing } from '/src/game/gameState.js';
 import type { Position } from '/src/game/map.js';
 
 export interface BoardHeroPresentation {
+  readonly guarded?: boolean;
+  readonly warded?: boolean;
   readonly label: string;
   readonly position: Position;
   readonly facing: Facing;
@@ -375,6 +377,21 @@ export const renderBoard = (
     context.textAlign = 'center';
     context.textBaseline = 'middle';
     context.fillText(hero.label, centerX, centerY);
+    for (const [enabled, label, offset, color] of [
+      [hero.guarded, 'G', -0.32, '#f3d38b'],
+      [hero.warded, 'W', 0.32, '#9bd4f2'],
+    ] as const) {
+      if (!enabled) continue;
+      const markerX = centerX + geometry.squareSize * offset;
+      const markerY = centerY - geometry.squareSize * 0.32;
+      context.beginPath();
+      context.arc(markerX, markerY, geometry.squareSize * 0.16, 0, Math.PI * 2);
+      context.fillStyle = '#171310';
+      context.fill();
+      context.fillStyle = color;
+      context.font = `bold ${Math.max(7, geometry.squareSize * 0.2)}px sans-serif`;
+      context.fillText(label, markerX, markerY);
+    }
     drawWounds(
       context,
       centerX,

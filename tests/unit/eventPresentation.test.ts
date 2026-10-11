@@ -50,3 +50,18 @@ test('private draws and routine movement never produce public highlights', () =>
   assert.equal(latestImportantEvent([{ type: 'hero-turn-started', round: 2, command: 2 }]), null);
   assert.equal(latestImportantEvent([]), null);
 });
+
+test('Brute Strength and Snorri survival highlights describe the effective damage', () => {
+  assert.match(
+    latestImportantEvent([{ ...fight, outcome: 'skaven-won', woundsInflicted: 2 }])!.detail,
+    /suffers 2 Wounds/
+  );
+  const saved = latestImportantEvent([
+    { ...fight, heroId: 'snorri', outcome: 'skaven-won', woundsInflicted: 0 },
+    { type: 'snorri-saved', heroId: 'snorri' },
+    { type: 'model-wounded', faction: 'hero', modelId: 'snorri', woundsRemaining: 1 },
+  ]);
+  assert.match(saved!.detail, /suffers 0 Wounds/);
+  assert.match(saved!.detail, /leaves him with 1 Wound/);
+  assert.doesNotMatch(saved!.detail, /is defeated/);
+});

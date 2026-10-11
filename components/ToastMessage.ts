@@ -178,7 +178,6 @@ class ToastMessage extends HTMLElement {
       this.isVisible = true;
 
       this.dismissTimeout = window.setTimeout(() => this.hide(), 2000);
-
     } else {
       console.error('[ToastMessage] Could not find .toast-body element');
     }

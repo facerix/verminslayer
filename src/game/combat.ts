@@ -10,7 +10,7 @@ export interface OpposedRollResult {
   readonly outcome: 'hero-won' | 'skaven-won' | 'tie';
 }
 
-const rollDice = (count: number, randomSource: CombatRandomSource): readonly number[] => {
+export const rollDice = (count: number, randomSource: CombatRandomSource): readonly number[] => {
   if (!Number.isInteger(count) || count < 1) {
     throw new RangeError('A Fight must roll at least one die for each model');
   }

@@ -26,12 +26,12 @@ const whenLoaded = Promise.all([
 
 whenLoaded.then(async () => {
   const updateNotification = document.querySelector('update-notification');
-  
+
   window.addEventListener('sw-update-available', event => {
     console.log('Service worker update available, showing notification');
     updateNotification?.show(event.detail.pendingWorker);
   });
-  
+
   await serviceWorkerManager.register();
 
   // actual game bootstrapping

@@ -182,7 +182,7 @@ export class GameBoard extends HTMLElement {
       ? ` Deployed heroes: ${this.#heroes
           .map(
             hero =>
-              `${hero.label} at row ${hero.position.row + 1}, column ${hero.position.column + 1}, facing ${hero.facing}, ${hero.woundsRemaining} of ${hero.woundsMaximum} Wounds remaining`
+              `${hero.label} at row ${hero.position.row + 1}, column ${hero.position.column + 1}, facing ${hero.facing}, ${hero.woundsRemaining} of ${hero.woundsMaximum} Wounds remaining${hero.guarded ? ', Guard' : ''}${hero.warded ? ', Ward' : ''}`
           )
           .join('; ')}.`
       : '';

@@ -90,7 +90,7 @@ disappears when the next Hero turn resets the pool to 2.
 | -------------- | ---------: | ------------------------------------------------------------------------- |
 | Fight          |   1 Action | Make a melee attack.                                                      |
 | Door           |   1 Action | Open or close an adjacent door.                                           |
-| Guard          |   1 Action | Enter Guard; this must be the hero's final Action.                        |
+| Guard          |   1 Action | Enter Guard and end the hero's activation.                        |
 | Dash           |   1 Action | Add the hero's Move value to its remaining Movement; once per activation. |
 | Hero ability   |    As card | Use the named ability.                                                    |
 | Mission action | As mission | Resolve the named mission effect.                                         |
@@ -133,15 +133,39 @@ disappears when the next Hero turn resets the pool to 2.
 ### FIGHT
 
 - Roll Fight dice: Highest die wins.
-- Tie = nothing. Loser suffers 1 Wound.
+- Tie = nothing. Loser suffers 1 Wound, except a Rat Ogor's Brute Strength deals 2 Wounds
+  to a losing hero, including when the Rat Ogor is defending.
+- Apply printed and contextual Fight dice before rolling: Axe of Grimnir checks the enemy's
+  printed maximum Wounds; Strength in Numbers also applies while defending; Backstab applies
+  only when the Gutter Runner attacks from the three adjacent squares opposite the hero's
+  Front Arc.
+- Resolve optional Karaghul and Rememberer rerolls before determining wounds. Each ability
+  may be used once per round, and each individual die may be rerolled at most once. Karaghul
+  applies only to Felix; Rememberer applies only to another hero. Offer these rerolls only
+  when the hero would tie or lose the Fight. Rememberer range uses Chebyshev distance and
+  requires living, deployed, non-exited Felix, without a line-of-sight requirement.
+- If the hero still loses and has a Ward, consume it and reroll every hero Fight die that has
+  not already been rerolled. Keep the enemy dice, compare the highest results again, then
+  apply wounds. If no hero die remains eligible, consume the Ward without another roll.
+- A hero can carry one Ward at a time. Maximilian may Ward himself. Ward is also an eligible
+  React action, costing 2 Command instead of an activation Action.
+- Snorri's Not Dead! automatically prevents lethal damage once per mission, leaving him with
+  1 Wound even when a Rat Ogor would deal 2 Wounds.
 
 ### GUARD
 
-- Guard costs 1 Action and must be the hero's final Action.
+- Guard costs 1 Action and ends the hero's activation. Forfeit any remaining Actions and
+  Movement.
 - Place a Guard marker beside the hero.
 - The first time an enemy enters an adjacent square in the hero's Front Arc, the hero
   immediately makes a free Fight against that enemy before it continues its activation.
-- Then discard the Guard marker. Guard is also lost when that hero next activates.
+- Discard the Guard marker when it triggers. If the enemy survives the Fight, it continues
+  its submitted Movement path; React is available only after that Movement finishes.
+- Revealed models entering the board from Noise placement can also trigger Guard; a
+  face-down Noise token does not trigger a Fight before its identity is revealed.
+- If several Guards trigger at the same square, resolve them in selected hero roster order
+  until the enemy is defeated or all those markers are consumed.
+- Guard is also lost when that hero next activates.
 
 ## Hero Cards
 
@@ -161,7 +185,7 @@ disappears when the next Hero turn resets the pool to 2.
 
 **Karaghul** — Once per round, Felix may reroll one of his Fight dice.
 
-**Rememberer** — Once per round, a hero within 4 squares of Felix may reroll one Fight die.
+**Rememberer** — Once per round, another hero within 4 squares of Felix may reroll one Fight die.
 
 ----------
 ### SNORRI NOSEBITER

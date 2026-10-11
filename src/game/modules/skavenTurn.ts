@@ -78,6 +78,10 @@ const NOISE_NAMES: Readonly<Record<NoiseResultId, string>> = Object.freeze({
 });
 
 const SKAVEN_COMMAND_TYPES = new Set<GameCommand['type']>([
+  'reroll-fight-die',
+  'accept-fight-rolls',
+  'resolve-ward',
+  'react-ward-hero',
   'start-skaven-activation',
   'move-skaven',
   'fight-hero',
@@ -124,7 +128,9 @@ export class SkavenTurnGameModule implements GameModule {
     if (view.setupStep !== 'complete') return;
     this.#setup.view = view;
     this.#setup.privateNoiseView =
-      view.skavenTurnStep === 'reinforce' ? this.#session.skavenView : null;
+      view.skavenTurnStep === 'reinforce' && !view.pendingCombat && !view.pendingReact
+        ? this.#session.skavenView
+        : null;
     this.#board.heroes = view.heroes.flatMap(hero =>
       hero.position && hero.facing
         ? [
@@ -132,6 +138,8 @@ export class SkavenTurnGameModule implements GameModule {
               label: HERO_LABELS[HERO_DEFINITIONS[hero.definitionId].id],
               position: hero.position,
               facing: hero.facing,
+              guarded: view.guards.includes(hero.id),
+              warded: view.wards.includes(hero.id),
               woundsRemaining: hero.woundsRemaining,
               woundsMaximum: HERO_DEFINITIONS[hero.definitionId].stats.wounds,
               activationStatus:

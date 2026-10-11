@@ -79,7 +79,7 @@ export const HERO_DEFINITIONS: Readonly<Record<HeroId, EntityDefinition<HeroId>>
     ability(
       'rememberer',
       'Rememberer',
-      'Once per round, a hero within 4 squares may reroll one Fight die.',
+      'Once per round, another hero within 4 squares may reroll one Fight die.',
       { limit: 'once-per-round' }
     ),
   ]),

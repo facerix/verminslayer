@@ -16,6 +16,7 @@ const AppCacheResources = Object.freeze({
     '/src/game/gameModule.js',
     '/src/game/gameSession.js',
     '/src/game/combat.js',
+    '/src/game/reactiveCombat.js',
     '/src/game/gameState.js',
     '/src/game/lineOfSight.js',
     '/src/game/pathfinding.js',

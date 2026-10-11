@@ -145,4 +145,4 @@ UX checkpoint before continuing the rules implementation:
 - Models and noise cannot pass through occupied squares except for the Gutter Runner’s stated Clanrat exception.
 - Each die may be rerolled at most once; multiple valid reroll abilities may affect different dice in the same fight.
 - A blocked or exhausted draw creates no replacement token.
-- Refreshing or closing the page loses the v1 game.
+- Refreshing or closing the page preserves the single saved game, including pending choices.

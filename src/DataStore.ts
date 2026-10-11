@@ -2,7 +2,7 @@ import type { GameState } from '/src/game/gameState.js';
 import { v4WithTimestamp } from '/src/uuid.js';
 
 const SCHEMA = {
-  SAVED_GAME: 'savedGame'
+  SAVED_GAME: 'savedGame',
 };
 
 export const SAVE_SCHEMA_VERSION = 1 as const;
@@ -97,10 +97,7 @@ export class DataStore extends EventTarget {
 
   #persist(): void {
     if (this.#savedGame) {
-      this.#getStorage().setItem(
-        SCHEMA.SAVED_GAME,
-        JSON.stringify(this.#savedGame)
-      );
+      this.#getStorage().setItem(SCHEMA.SAVED_GAME, JSON.stringify(this.#savedGame));
     } else {
       this.#getStorage().removeItem(SCHEMA.SAVED_GAME);
     }
