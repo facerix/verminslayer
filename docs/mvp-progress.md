@@ -1,6 +1,6 @@
 # MVP Progress
 
-Last updated: 2026-09-17
+Last updated: 2026-10-10
 
 This is the handoff log for [`mvp-plan.md`](mvp-plan.md). Update it when a reviewable
 slice starts or finishes so a future turn can resume without reconstructing project state
@@ -8,11 +8,11 @@ from Git history.
 
 ## Current status
 
-The eighth reviewable slice, **Reactive combat mechanics**, is complete in the working
-tree. Guard interrupts enemy movement and revealed-model placement, all Fight sources share
-contextual modifiers and damage, and rerolls / Ward remain explicit saved choices. Solo AI
-pauses for those Hero choices and resumes through Guard, React, and the round transition.
-The single-game persistence foundation also remains in place.
+The ninth reviewable slice, **Active and movement abilities**, is complete in the working
+tree. Hero bonus attacks and movement, three ranged weapons, Demolition Charge, Skitter,
+and Smash use the immutable engine and saved interruption flow. Solo AI pauses for Hero
+choices and resumes after they resolve. The single-game persistence foundation remains in
+place.
 
 | Slice | Status | Outcome |
 | --- | --- | --- |
@@ -25,7 +25,7 @@ The single-game persistence foundation also remains in place.
 | 7. Solo Skaven AI | Complete | Legal attack-maximizing placement, nearest-first activations, shortest paths, attacks, Noise, and reinforcement |
 | Persistence foundation | Complete | One versioned local save, automatic resume, private-state-safe handoff, and confirmed quit/clear |
 | 8. Reactive combat mechanics | Complete | Guard, rerolls, Ward, death prevention, dice modifiers, and Rat Ogor damage |
-| 9. Active and movement abilities | Not started | Bonus attacks/movement, ranged abilities, charges, Skitter, and Smash |
+| 9. Active and movement abilities | Complete | Bonus attacks/movement, ranged abilities, charges, Skitter, and Smash |
 | 10. Mission resolution and MVP hardening | Not started | Nests, exit, victory and loss, complete-game scenarios, privacy, UI, and offline verification |
 
 ## Completed in slice 1
@@ -265,6 +265,27 @@ The single-game persistence foundation also remains in place.
 - Updated the tabletop rules with resolved timing and reroll conventions, and removed the
   obsolete plan default that claimed a refresh loses the saved game.
 
+## Completed in slice 9
+
+- Added saved follow-up choices for Slayer’s Fury, Two-Fisted, Hunter’s Step, Repeater
+  Handgun, and Demolition Charge. Optional follow-ups can be declined; charge blast attacks
+  must all resolve. The choice state survives reload and blocks unrelated commands.
+- Added Kislevite Bow, Arcane Bolt, and Repeater Handgun attacks at their printed ranges,
+  line-of-sight requirements, dice counts, and Action costs. Every shot uses the shared
+  defender modifiers, reroll/Ward choices, wounds, and combat log.
+- Added once-per-activation Slayer’s Fury and once-per-mission Demolition Charge usage to
+  saved state. Existing once-per-round rerolls remain tracked separately. The charge can
+  be placed beside an intact door or nest, then detonated with confirmation during a Hero
+  turn; it destroys that feature and attacks each adjacent enemy with 3 dice.
+- Added Gutter Runner Skitter through Clanrat-occupied intermediate squares, while still
+  forbidding an occupied destination. Rat Ogors can cross and destroy closed doors during
+  Movement. A Smash reveal interrupts the remaining path for Skaven placement, then
+  resumes the saved Movement and React timing.
+- Added semantic ability controls and charge/destroyed-nest board presentation, including
+  accessible descriptions. Updated both service-worker cache versions to `0.1.9`.
+- Regression tests cover ability costs, limits, pending save/resume, multiple attacks,
+  special movement legality, forced reveal and continuation, and feature destruction.
+
 ## Verification baseline
 
 For the completed Slice 7 plus the persistence foundation:
@@ -331,6 +352,17 @@ For the completed Slice 7 plus the persistence foundation:
   origin reproduced the previously tracked stale-response / multiple-worker behavior; those
   service-worker follow-ups remain below.
 
+## Slice 9 verification
+
+- `pnpm format`, `pnpm lint` (zero warnings/errors), `pnpm typecheck`, all 208 tests,
+  and `pnpm build` passed.
+- A clean local browser preview verified Malakai’s charge control, Action cost,
+  confirmation, door destruction, board description, and saved state through the UI.
+  The preview reported no console warnings or errors.
+- Ranged and bonus combat, Skitter, Smash interruption/resume, and charge blast ordering
+  were exercised with deterministic engine tests. A full mission playthrough remains in
+  Slice 10.
+
 ## Known follow-up
 
 - Refresh the data-model briefs in `AGENTS.md` and `CLAUDE.md`: they still describe an
@@ -348,9 +380,8 @@ For the completed Slice 7 plus the persistence foundation:
 
 ## Proposed next slice
 
-Build Slice 9, **Active and movement abilities**: bonus attacks / movement, ranged attacks,
-Demolition Charge, Skitter, and revealed Rat Ogor Smash. Extend the saved pending-choice flow
-for each interrupting ability and keep contextual combat effects shared.
+Build Slice 10, **Mission resolution and MVP hardening**: ordinary nest interactions,
+exit, victory and loss, full-game scenarios, privacy, UI, and offline verification.
 
 ## Remaining slice breakdown
 

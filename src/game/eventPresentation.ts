@@ -32,6 +32,12 @@ export const latestImportantEvent = (
         detail: `At row ${event.position.row + 1}, column ${event.position.column + 1}.${event.resultId === 'nothing' ? ' The token is removed.' : ''}`,
       };
     }
+    if (event.type === 'nest-destroyed') {
+      return {
+        title: 'Nest destroyed',
+        detail: `At row ${event.position.row + 1}, column ${event.position.column + 1}.`,
+      };
+    }
     if (event.type !== 'fight-rolled') continue;
     const hero = HERO_DEFINITIONS[event.heroId].name;
     const skaven = `${SKAVEN_DEFINITIONS[event.skavenDefinitionId].name} #${getSkavenModelIdentifier(event.skavenId)}`;
@@ -51,7 +57,10 @@ export const latestImportantEvent = (
     const outcome =
       event.outcome === 'tie'
         ? 'Tie; no Wound.'
-        : `${loser} suffers ${event.woundsInflicted ?? 1} ${(event.woundsInflicted ?? 1) === 1 ? 'Wound' : 'Wounds'}.${effects.some(candidate => candidate.type === 'snorri-saved') ? ' Snorri’s Not Dead! leaves him with 1 Wound.' : ''}${defeated ? ` ${loser} is defeated.` : ''}`;
+        : event.woundsInflicted === 0 &&
+            !effects.some(candidate => candidate.type === 'snorri-saved')
+          ? 'No Wound.'
+          : `${loser} suffers ${event.woundsInflicted ?? 1} ${(event.woundsInflicted ?? 1) === 1 ? 'Wound' : 'Wounds'}.${effects.some(candidate => candidate.type === 'snorri-saved') ? ' Snorri’s Not Dead! leaves him with 1 Wound.' : ''}${defeated ? ` ${loser} is defeated.` : ''}`;
     return {
       title:
         event.outcome === 'tie'

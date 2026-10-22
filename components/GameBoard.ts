@@ -65,6 +65,8 @@ export class GameBoard extends HTMLElement {
   #legalSquares: readonly Position[] = [];
   #selectedSquare: Position | null = null;
   #doors: readonly BoardDoorPresentation[] = [];
+  #nests: readonly { readonly position: Position; readonly status: 'intact' | 'destroyed' }[] = [];
+  #demolitionCharge: Position | null = null;
 
   constructor() {
     super();
@@ -121,6 +123,20 @@ export class GameBoard extends HTMLElement {
     this.#draw();
   }
 
+  set nests(
+    nests: readonly { readonly position: Position; readonly status: 'intact' | 'destroyed' }[]
+  ) {
+    this.#nests = nests;
+    this.#updateDescription();
+    this.#draw();
+  }
+
+  set demolitionCharge(position: Position | null) {
+    this.#demolitionCharge = position;
+    this.#updateDescription();
+    this.#draw();
+  }
+
   connectedCallback() {
     this.#resizeObserver.observe(this.#frame);
     this.#draw();
@@ -148,6 +164,8 @@ export class GameBoard extends HTMLElement {
       legalSquares: this.#legalSquares,
       selectedSquare: this.#selectedSquare,
       doors: this.#doors,
+      nests: this.#nests,
+      demolitionCharge: this.#demolitionCharge,
     });
   }
 
@@ -224,6 +242,13 @@ export class GameBoard extends HTMLElement {
     const selectedSquare = this.#selectedSquare
       ? ` Selected destination: row ${this.#selectedSquare.row + 1}, column ${this.#selectedSquare.column + 1}.`
       : '';
+    const destroyedNests = this.#nests.filter(nest => nest.status === 'destroyed');
+    const nests = destroyedNests.length
+      ? ` Destroyed nests: ${destroyedNests.map(nest => `row ${nest.position.row + 1}, column ${nest.position.column + 1}`).join('; ')}.`
+      : '';
+    const charge = this.#demolitionCharge
+      ? ` Demolition Charge at row ${this.#demolitionCharge.row + 1}, column ${this.#demolitionCharge.column + 1}.`
+      : '';
     description.textContent =
       'The Nest board: 13 columns by 19 rows, with doors, three nests, three Skaven spawn points, one hero deployment point, and a locked south exit.' +
       heroes +
@@ -232,6 +257,8 @@ export class GameBoard extends HTMLElement {
       skaven +
       doors +
       destroyed +
+      nests +
+      charge +
       selectedSquare;
   }
 }

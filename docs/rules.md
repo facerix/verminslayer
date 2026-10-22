@@ -135,6 +135,12 @@ disappears when the next Hero turn resets the pool to 2.
 - Roll Fight dice: Highest die wins.
 - Tie = nothing. Loser suffers 1 Wound, except a Rat Ogor's Brute Strength deals 2 Wounds
   to a losing hero, including when the Rat Ogor is defending.
+- Ranged attacks still compare the highest dice, but a defending target that wins does not
+  wound the attacker. This applies to Kislevite Bow, Arcane Bolt, Repeater Handgun, and
+  Demolition Charge. The attack still spends its Action and triggers any follow-up ability.
+- A hero cannot make a ranged attack while any enemy is adjacent, including diagonally.
+  Move out of melee range before using Kislevite Bow, Arcane Bolt, Repeater Handgun, or
+  detonating a Demolition Charge. A placed charge remains available to detonate later.
 - Apply printed and contextual Fight dice before rolling: Axe of Grimnir checks the enemy's
   printed maximum Wounds; Strength in Numbers also applies while defending; Backstab applies
   only when the Gutter Runner attacks from the three adjacent squares opposite the hero's
@@ -144,13 +150,41 @@ disappears when the next Hero turn resets the pool to 2.
   applies only to Felix; Rememberer applies only to another hero. Offer these rerolls only
   when the hero would tie or lose the Fight. Rememberer range uses Chebyshev distance and
   requires living, deployed, non-exited Felix, without a line-of-sight requirement.
-- If the hero still loses and has a Ward, consume it and reroll every hero Fight die that has
+- If the hero still loses a melee Fight and has a Ward, consume it and reroll every hero Fight die that has
   not already been rerolled. Keep the enemy dice, compare the highest results again, then
   apply wounds. If no hero die remains eligible, consume the Ward without another roll.
-- A hero can carry one Ward at a time. Maximilian may Ward himself. Ward is also an eligible
+- A hero can carry one Ward at a time. A lost ranged attack leaves the Ward in place.
+  Maximilian may Ward himself. Ward is also an eligible
   React action, costing 2 Command instead of an activation Action.
 - Snorri's Not Dead! automatically prevents lethal damage once per mission, leaving him with
   1 Wound even when a Rat Ogor would deal 2 Wounds.
+
+### ACTIVE ABILITY TIMING
+
+- Slayer’s Fury is offered after Gotrek defeats an enemy during his own activation, once
+  during that activation. Choose one free adjacent attack, one free orthogonal square of
+  Movement, or decline. The follow-up attack does not trigger another Fury.
+- Two-Fisted is offered after Snorri defeats a Clanrat in a Fight, including a Guard or
+  React Fight. Choose one other adjacent Clanrat to attack for free or decline. That bonus
+  Fight does not trigger another Two-Fisted attack.
+- Ulrika may take Hunter’s Step after her Kislevite Bow Fight resolves, even if it tied or
+  she lost. She may move one passable, unoccupied orthogonal square for free
+  or decline; this does not use her normal Movement allowance.
+- Repeater Handgun spends 2 Actions on the first shot. Resolve up to three different
+  targets one Fight at a time, with an option to stop after each. Each new target must
+  remain within 5 squares and line of sight when chosen. Each shot rolls one hero die;
+  the defender uses its normal contextual Fight dice. Rerolls interrupt each
+  shot before the next target is selected.
+- Demolition Charge spends 1 Action when placed adjacent to an intact door or nest, once
+  per mission. While Malakai is alive, he may detonate it with confirmation at any point
+  during a Hero turn without another Action. Destroy the attached feature first, then
+  resolve one 3-die Fight against each enemy adjacent to the feature at detonation,
+  choosing the order.
+  Door destruction immediately applies line of sight and forced Noise reveal.
+- Skitter permits a Gutter Runner to cross a square occupied by a Clanrat during its
+  Movement, but never to finish on any occupied square. Smash destroys a closed door as
+  a Rat Ogor enters it during Movement. If the destruction reveals Noise, place that
+  group before continuing the submitted path.
 
 ### GUARD
 

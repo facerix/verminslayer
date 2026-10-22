@@ -14,9 +14,20 @@ export interface AbilityUsage {
   readonly karaghulRound: number | null;
   readonly remembererRound: number | null;
   readonly snorriSaved: boolean;
+  readonly slayersFuryUsed: boolean;
+  readonly demolitionChargeUsed: boolean;
 }
 export interface PendingCombat extends CombatResult {
-  readonly source: 'hero' | 'skaven' | 'react' | 'guard';
+  readonly source:
+    | 'hero'
+    | 'skaven'
+    | 'react'
+    | 'guard'
+    | 'ranged'
+    | 'bonus'
+    | 'repeater'
+    | 'charge';
+  readonly actionCost?: number;
   readonly stage: 'rerolls' | 'ward';
   readonly rerolledDice: readonly number[];
 }
@@ -30,6 +41,8 @@ export const EMPTY_ABILITY_USAGE: AbilityUsage = Object.freeze({
   karaghulRound: null,
   remembererRound: null,
   snorriSaved: false,
+  slayersFuryUsed: false,
+  demolitionChargeUsed: false,
 });
 export const distance = (left: Position, right: Position): number =>
   Math.max(Math.abs(left.row - right.row), Math.abs(left.column - right.column));

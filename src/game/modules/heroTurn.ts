@@ -31,6 +31,8 @@ interface HeroTurnView {
   chooseMoveDestination(): void;
   chooseMoveFacing(destination: Position): void;
   clearMoveSelection(): void;
+  chooseBoardAction(selection: 'ranged' | 'charge' | 'ability-fight' | 'ability-move'): void;
+  clearBoardAction(): void;
 }
 
 interface BoardView {
@@ -39,6 +41,8 @@ interface BoardView {
   selectedSquare: Position | null;
   noiseTokens: readonly BoardNoisePresentation[];
   doors: readonly BoardDoorPresentation[];
+  nests?: readonly { readonly position: Position; readonly status: 'intact' | 'destroyed' }[];
+  demolitionCharge?: Position | null;
   skaven: readonly BoardSkavenPresentation[];
 }
 
@@ -49,7 +53,16 @@ interface HeroTurnGameModuleOptions {
   readonly randomSource: RandomSource;
 }
 
-type SelectionMode = 'move' | 'door' | 'fight' | 'skaven-placement' | null;
+type SelectionMode =
+  | 'move'
+  | 'door'
+  | 'fight'
+  | 'ranged'
+  | 'charge'
+  | 'ability-fight'
+  | 'ability-move'
+  | 'skaven-placement'
+  | null;
 
 const HERO_LABELS: Readonly<Record<HeroId, string>> = Object.freeze({
   gotrek: 'Go',
@@ -77,6 +90,15 @@ const NOISE_NAMES: Readonly<Record<NoiseResultId, string>> = Object.freeze({
 });
 
 const HERO_COMMAND_TYPES = new Set<GameCommand['type']>([
+  'use-slayers-fury',
+  'use-two-fisted',
+  'use-hunters-step',
+  'skip-ability',
+  'ranged-attack',
+  'repeater-attack',
+  'place-demolition-charge',
+  'detonate-demolition-charge',
+  'continue-charge',
   'reroll-fight-die',
   'accept-fight-rolls',
   'resolve-ward',
@@ -102,6 +124,11 @@ export class HeroTurnGameModule implements GameModule {
     'hero-move-cancelled',
     'hero-door-requested',
     'hero-fight-requested',
+    'hero-ranged-requested',
+    'hero-charge-requested',
+    'hero-ability-fight-requested',
+    'hero-ability-move-requested',
+    'hero-board-action-cancelled',
     'skaven-placement-requested',
   ]);
   readonly #session: GameSession;
@@ -177,6 +204,8 @@ export class HeroTurnGameModule implements GameModule {
       status:
         door.status === 'open' || door.status === 'destroyed' ? door.status : ('closed' as const),
     }));
+    this.#board.nests = view.nests;
+    this.#board.demolitionCharge = view.demolitionCharge?.position ?? null;
     this.#renderLegalSquares(view);
   }
 
@@ -187,6 +216,13 @@ export class HeroTurnGameModule implements GameModule {
     if (event.type === 'hero-move-cancelled') return this.#handleMoveCancel();
     if (event.type === 'hero-door-requested') return this.#handleDoorRequest();
     if (event.type === 'hero-fight-requested') return this.#handleFightRequest();
+    if (event.type === 'hero-ranged-requested') return this.#handleBoardActionRequest('ranged');
+    if (event.type === 'hero-charge-requested') return this.#handleBoardActionRequest('charge');
+    if (event.type === 'hero-ability-fight-requested')
+      return this.#handleBoardActionRequest('ability-fight');
+    if (event.type === 'hero-ability-move-requested')
+      return this.#handleBoardActionRequest('ability-move');
+    if (event.type === 'hero-board-action-cancelled') return this.#handleBoardActionCancel();
     if (event.type === 'skaven-placement-requested') {
       return this.#handleSkavenPlacementRequest(event);
     }
@@ -278,6 +314,31 @@ export class HeroTurnGameModule implements GameModule {
     return true;
   }
 
+  #handleBoardActionRequest(mode: 'ranged' | 'charge' | 'ability-fight' | 'ability-move'): boolean {
+    const view = this.#session.heroView;
+    const legal =
+      mode === 'ranged'
+        ? view.legalRangedTargetIds
+        : mode === 'charge'
+          ? view.legalChargePositions
+          : mode === 'ability-fight'
+            ? view.legalAbilityFightTargetIds
+            : view.legalAbilityMovePositions;
+    const pendingChoice = mode === 'ability-fight' || mode === 'ability-move';
+    if ((!pendingChoice && view.phase !== 'hero') || legal.length === 0) return false;
+    this.#selectionMode = mode;
+    this.#setup.chooseBoardAction(mode);
+    this.#renderLegalSquares(view);
+    return true;
+  }
+
+  #handleBoardActionCancel(): boolean {
+    if (!['ranged', 'charge', 'ability-fight', 'ability-move'].includes(this.#selectionMode ?? ''))
+      return false;
+    this.#clearSelection();
+    return true;
+  }
+
   #handleSkavenPlacementRequest(event: Event): boolean {
     const view = this.#session.heroView;
     if (view.revealedNoise.length === 0) return false;
@@ -291,7 +352,12 @@ export class HeroTurnGameModule implements GameModule {
   #handleBoardSelection(event: Event): boolean {
     const view = this.#session.heroView;
     if (!this.#selectionMode) return false;
-    if (this.#selectionMode !== 'skaven-placement' && !view.activeHeroId) return false;
+    if (
+      this.#selectionMode !== 'skaven-placement' &&
+      this.#selectionMode !== 'ability-fight' &&
+      !view.activeHeroId
+    )
+      return false;
     const position = (event as CustomEvent<Position>).detail;
     try {
       let events: readonly GameEvent[];
@@ -325,6 +391,54 @@ export class HeroTurnGameModule implements GameModule {
           heroId: view.activeHeroId,
           skavenId: target.id,
         });
+      } else if (this.#selectionMode === 'charge') {
+        if (!view.legalChargePositions.some(candidate => this.#samePosition(candidate, position))) {
+          throw new RulesError('ABILITY_NOT_AVAILABLE', 'Choose a highlighted charge location');
+        }
+        events = this.#dispatch({
+          type: 'place-demolition-charge',
+          heroId: view.activeHeroId!,
+          position,
+        });
+      } else if (this.#selectionMode === 'ability-move') {
+        if (
+          !view.legalAbilityMovePositions.some(candidate => this.#samePosition(candidate, position))
+        ) {
+          throw new RulesError('ABILITY_CHOICE_REQUIRED', 'Choose a highlighted ability move');
+        }
+        events = this.#dispatch(
+          view.pendingAbility?.type === 'slayers-fury'
+            ? { type: 'use-slayers-fury', choice: 'move', position }
+            : { type: 'use-hunters-step', position }
+        );
+      } else if (this.#selectionMode === 'ranged' || this.#selectionMode === 'ability-fight') {
+        const target = view.skaven.find(skaven => this.#samePosition(skaven.position, position));
+        const legalIds =
+          this.#selectionMode === 'ranged'
+            ? view.legalRangedTargetIds
+            : view.legalAbilityFightTargetIds;
+        if (!target || !legalIds.includes(target.id)) {
+          throw new RulesError('UNKNOWN_FIGHT_TARGET', 'Choose a highlighted Skaven model');
+        }
+        if (this.#selectionMode === 'ranged') {
+          events = this.#dispatch({
+            type: 'ranged-attack',
+            heroId: view.activeHeroId!,
+            skavenId: target.id,
+          });
+        } else {
+          const pending = view.pendingAbility;
+          if (!pending) throw new RulesError('ABILITY_CHOICE_REQUIRED', 'No ability is pending');
+          events = this.#dispatch(
+            pending.type === 'slayers-fury'
+              ? { type: 'use-slayers-fury', choice: 'fight', skavenId: target.id }
+              : pending.type === 'two-fisted'
+                ? { type: 'use-two-fisted', skavenId: target.id }
+                : pending.type === 'repeater'
+                  ? { type: 'repeater-attack', skavenId: target.id }
+                  : { type: 'continue-charge', skavenId: target.id }
+          );
+        }
       } else {
         const noise = view.revealedNoise[0];
         if (!noise) {
@@ -356,9 +470,21 @@ export class HeroTurnGameModule implements GameModule {
             ? view.skaven
                 .filter(skaven => view.legalFightTargetIds.includes(skaven.id))
                 .map(skaven => skaven.position)
-            : this.#selectionMode === 'skaven-placement' && view.revealedNoise[0]
-              ? this.#session.legalSkavenPlacementPositions(view.revealedNoise[0].id)
-              : [];
+            : this.#selectionMode === 'ranged'
+              ? view.skaven
+                  .filter(skaven => view.legalRangedTargetIds.includes(skaven.id))
+                  .map(skaven => skaven.position)
+              : this.#selectionMode === 'charge'
+                ? view.legalChargePositions
+                : this.#selectionMode === 'ability-move'
+                  ? view.legalAbilityMovePositions
+                  : this.#selectionMode === 'ability-fight'
+                    ? view.skaven
+                        .filter(skaven => view.legalAbilityFightTargetIds.includes(skaven.id))
+                        .map(skaven => skaven.position)
+                    : this.#selectionMode === 'skaven-placement' && view.revealedNoise[0]
+                      ? this.#session.legalSkavenPlacementPositions(view.revealedNoise[0].id)
+                      : [];
     this.#board.selectedSquare = this.#pendingMoveDestination;
   }
 
@@ -379,6 +505,7 @@ export class HeroTurnGameModule implements GameModule {
     this.#board.legalSquares = [];
     this.#board.selectedSquare = null;
     this.#setup.clearMoveSelection();
+    this.#setup.clearBoardAction();
   }
 
   #reportError(error: unknown) {

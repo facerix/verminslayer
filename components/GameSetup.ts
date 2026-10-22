@@ -342,6 +342,8 @@ type MoveSelection =
       readonly destination: Position;
     };
 
+type BoardActionSelection = 'ranged' | 'charge' | 'ability-fight' | 'ability-move';
+
 const NOISE_RESULT_NAMES: Readonly<Record<NoiseResultId, string>> = Object.freeze({
   'two-clanrats': 'Two Clanrats',
   'three-clanrats': 'Three Clanrats',
@@ -356,6 +358,7 @@ export class GameSetup extends HTMLElement {
   #error = '';
   #announcement = '';
   #moveSelection: MoveSelection | null = null;
+  #boardActionSelection: BoardActionSelection | null = null;
   #privateNoiseHandoffComplete = false;
   #skavenHandoffComplete = false;
   #reactHandoffComplete = false;
@@ -387,6 +390,7 @@ export class GameSetup extends HTMLElement {
     this.#privateNoiseView = null;
     this.#error = '';
     this.#moveSelection = null;
+    this.#boardActionSelection = null;
     this.#render();
   }
 
@@ -440,6 +444,17 @@ export class GameSetup extends HTMLElement {
     this.#render();
   }
 
+  chooseBoardAction(selection: BoardActionSelection) {
+    this.#boardActionSelection = selection;
+    this.#render();
+  }
+
+  clearBoardAction() {
+    if (!this.#boardActionSelection) return;
+    this.#boardActionSelection = null;
+    this.#render();
+  }
+
   showError(message: string) {
     this.#error = message;
     const error = this.shadowRoot?.querySelector('.error');
@@ -484,7 +499,13 @@ export class GameSetup extends HTMLElement {
     } else if (door?.type === 'door-closed') {
       this.#announcement = `Door closed at row ${door.position.row + 1}, column ${door.position.column + 1}.`;
     } else if (door?.type === 'door-destroyed') {
-      this.#announcement = `Door SMASHED at row ${door.position.row + 1}, column ${door.position.column + 1}.`;
+      this.#announcement = `Door destroyed at row ${door.position.row + 1}, column ${door.position.column + 1}.`;
+    } else if (latest?.type === 'demolition-charge-placed') {
+      this.#announcement = `Demolition Charge placed at row ${latest.position.row + 1}, column ${latest.position.column + 1}.`;
+    } else if (latest?.type === 'demolition-charge-detonated') {
+      this.#announcement = `Demolition Charge detonated at row ${latest.position.row + 1}, column ${latest.position.column + 1}.`;
+    } else if (latest?.type === 'nest-destroyed') {
+      this.#announcement = `Nest destroyed at row ${latest.position.row + 1}, column ${latest.position.column + 1}.`;
     } else if (latest?.type === 'hero-deployed') {
       const heroName = HERO_DEFINITIONS[latest.heroId].name;
       this.#announcement = `${heroName} deployed at row ${latest.position.row + 1}, column ${latest.position.column + 1}, facing ${latest.facing}.`;
@@ -742,8 +763,28 @@ export class GameSetup extends HTMLElement {
     ]);
   }
 
+  #renderDetonateButton(): HTMLButtonElement | null {
+    const view = this.#view;
+    const malakai = view?.heroes.find(hero => hero.id === 'malakai');
+    if (!view?.demolitionCharge || !malakai?.position || malakai.woundsRemaining <= 0) return null;
+    const detonate = h('button', {
+      type: 'button',
+      textContent: 'Detonate Demolition Charge',
+      disabled: view.skaven.some(skaven => distance(malakai.position!, skaven.position) === 1),
+    });
+    detonate.addEventListener('click', () =>
+      this.#confirmCommand('Detonate the Demolition Charge and destroy its feature?', {
+        type: 'detonate-demolition-charge',
+        confirmed: true,
+      })
+    );
+    return detonate;
+  }
+
   #renderHeroTurn(): HTMLElement {
     if (this.#view?.pendingCombat) return this.#renderCombatChoice();
+    if (this.#view?.pendingAbility && this.#view.revealedNoise.length === 0)
+      return this.#renderPendingAbility();
     if (
       this.#view?.phase === 'skaven' &&
       this.#view.mode === 'two-player' &&
@@ -885,6 +926,32 @@ export class GameSetup extends HTMLElement {
           (this.#view?.legalFightTargetIds.length ?? 0) === 0,
       });
       fight.addEventListener('click', () => this.#dispatchUiEvent('hero-fight-requested'));
+      const rangedTargets = this.#view?.legalRangedTargetIds ?? [];
+      const weapon =
+        activeHero.id === 'ulrika'
+          ? 'Kislevite Bow'
+          : activeHero.id === 'maximilian'
+            ? 'Arcane Bolt'
+            : 'Repeater Handgun';
+      const ranged = h('button', {
+        type: 'button',
+        textContent: weapon,
+        disabled: rangedTargets.length === 0,
+      });
+      ranged.addEventListener('click', () => this.#dispatchUiEvent('hero-ranged-requested'));
+      const charge = h('button', {
+        type: 'button',
+        textContent: 'Place Demolition Charge · 1 Action',
+        disabled: (this.#view?.legalChargePositions.length ?? 0) === 0,
+      });
+      charge.addEventListener('click', () => this.#dispatchUiEvent('hero-charge-requested'));
+      const choosingBoardAction =
+        this.#boardActionSelection === 'ranged' || this.#boardActionSelection === 'charge';
+      const cancelBoardAction = h('button', { type: 'button', textContent: 'Cancel selection' });
+      cancelBoardAction.addEventListener('click', () =>
+        this.#dispatchUiEvent('hero-board-action-cancelled')
+      );
+      const detonate = this.#renderDetonateButton();
       const dash = h('button', {
         type: 'button',
         textContent: this.#view?.dashUsed ? 'Dash used' : 'Dash · 1 Action',
@@ -935,16 +1002,31 @@ export class GameSetup extends HTMLElement {
           className: 'help',
           textContent: choosingDestination
             ? 'Select a highlighted destination on the board. The current square is legal while a facing change remains.'
-            : 'Movement is free and may be split before, between, and after Actions. Dash adds the hero’s Move again.',
+            : choosingBoardAction
+              ? 'Select a highlighted target on the board.'
+              : 'Movement is free and may be split before, between, and after Actions. Dash adds the hero’s Move again.',
         }),
         h(
           'div',
           { className: 'action-grid' },
           choosingDestination
             ? [move, cancelMove]
-            : [move, fight, interact, dash, push, guard, ...wards]
+            : choosingBoardAction
+              ? [this.#boardActionSelection === 'ranged' ? ranged : charge, cancelBoardAction]
+              : [
+                  move,
+                  fight,
+                  ...(rangedTargets.length ? [ranged] : []),
+                  interact,
+                  ...((this.#view?.legalChargePositions.length ?? 0) > 0 ? [charge] : []),
+                  ...(detonate ? [detonate] : []),
+                  dash,
+                  push,
+                  guard,
+                  ...wards,
+                ]
         ),
-        ...(choosingDestination ? [] : [this.#renderCombatLog(), end]),
+        ...(choosingDestination || choosingBoardAction ? [] : [this.#renderCombatLog(), end]),
       ]);
     }
 
@@ -983,6 +1065,7 @@ export class GameSetup extends HTMLElement {
         confirmed: true,
       })
     );
+    const detonate = this.#renderDetonateButton();
 
     return h('div', { className: 'turn-status' }, [
       header,
@@ -993,8 +1076,63 @@ export class GameSetup extends HTMLElement {
           : 'Choose the next living, non-exited hero to activate.',
       }),
       roster,
+      ...(detonate ? [detonate] : []),
       this.#renderCombatLog(),
       endPhase,
+    ]);
+  }
+
+  #renderPendingAbility(): HTMLElement {
+    const view = this.#view!;
+    const pending = view.pendingAbility!;
+    const name =
+      pending.type === 'slayers-fury'
+        ? 'Slayer’s Fury'
+        : pending.type === 'two-fisted'
+          ? 'Two-Fisted'
+          : pending.type === 'hunters-step'
+            ? 'Hunter’s Step'
+            : pending.type === 'repeater'
+              ? 'Repeater Handgun'
+              : 'Demolition Charge';
+    const buttons: HTMLButtonElement[] = [];
+    if (view.legalAbilityFightTargetIds.length > 0) {
+      const attack = h('button', { type: 'button', textContent: 'Attack' });
+      attack.addEventListener('click', () => this.#dispatchUiEvent('hero-ability-fight-requested'));
+      buttons.push(attack);
+    }
+    if (view.legalAbilityMovePositions.length > 0) {
+      const move = h('button', { type: 'button', textContent: 'Move 1 square' });
+      move.addEventListener('click', () => this.#dispatchUiEvent('hero-ability-move-requested'));
+      buttons.push(move);
+    }
+    if (this.#boardActionSelection) {
+      const cancel = h('button', { type: 'button', textContent: 'Cancel selection' });
+      cancel.addEventListener('click', () => this.#dispatchUiEvent('hero-board-action-cancelled'));
+      const selected = buttons.find(button =>
+        this.#boardActionSelection === 'ability-move'
+          ? button.textContent === 'Move 1 square'
+          : button.textContent === 'Attack'
+      );
+      buttons.splice(0, buttons.length, ...(selected ? [selected] : []), cancel);
+    } else if (pending.type !== 'charge') {
+      const skip = h('button', { type: 'button', textContent: 'Finish ability' });
+      skip.addEventListener('click', () => this.#dispatchCommand({ type: 'skip-ability' }));
+      buttons.push(skip);
+    }
+    return h('div', { className: 'activation-card' }, [
+      h('p', { className: 'eyebrow', textContent: 'Ability choice' }),
+      h('h2', { textContent: name }),
+      h('p', {
+        className: 'help',
+        textContent: this.#boardActionSelection
+          ? 'Select a highlighted square on the board.'
+          : pending.type === 'charge'
+            ? 'Resolve the 3-die attack against every enemy adjacent to the destroyed feature.'
+            : 'Choose a follow-up, or finish this ability.',
+      }),
+      h('div', { className: 'action-grid' }, buttons),
+      this.#renderCombatLog(),
     ]);
   }
 
@@ -1480,7 +1618,9 @@ export class GameSetup extends HTMLElement {
             ? 'tie; no Wound'
             : result.outcome === 'hero-won'
               ? 'hero wins; Skaven suffers 1 Wound'
-              : `Skaven wins; hero suffers ${result.woundsInflicted ?? 1} ${(result.woundsInflicted ?? 1) === 1 ? 'Wound' : 'Wounds'}`;
+              : result.woundsInflicted === 0
+                ? 'Skaven wins; no Wound'
+                : `Skaven wins; hero suffers ${result.woundsInflicted ?? 1} ${(result.woundsInflicted ?? 1) === 1 ? 'Wound' : 'Wounds'}`;
         return h('li', {
           textContent: `${HERO_DEFINITIONS[result.heroId].name} [${result.heroRolls.join(', ')}], high ${heroHigh}; ${SKAVEN_DEFINITIONS[result.skavenDefinitionId].name} [${result.skavenRolls.join(', ')}], high ${skavenHigh}: ${outcome}.${this.#rerollText(result.rerolls)}`,
         });

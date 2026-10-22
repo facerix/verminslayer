@@ -6,6 +6,8 @@ export interface MovementContext {
   readonly maximumSteps: number;
   readonly closedDoors: readonly Position[];
   readonly blockedPositions: readonly Position[];
+  /** Occupied squares that may be crossed, but never used as a destination. */
+  readonly traversablePositions?: readonly Position[];
   readonly exitOpen: boolean;
 }
 
@@ -36,6 +38,21 @@ const isPassable = (context: MovementContext, position: Position): boolean => {
   return true;
 };
 
+const isTraversable = (context: MovementContext, position: Position): boolean =>
+  isPassable(context, position) ||
+  (context.traversablePositions?.some(
+    candidate => positionKey(candidate) === positionKey(position)
+  ) &&
+    isPassable(
+      {
+        ...context,
+        blockedPositions: context.blockedPositions.filter(
+          candidate => positionKey(candidate) !== positionKey(position)
+        ),
+      },
+      position
+    )) === true;
+
 const NEIGHBOR_OFFSETS = Object.freeze([
   Object.freeze({ row: -1, column: 0 }),
   Object.freeze({ row: 0, column: 1 }),
@@ -65,12 +82,12 @@ export const getReachablePaths = (context: MovementContext): readonly ReachableP
         column: current.position.column + offset.column,
       });
       const key = positionKey(next);
-      if (visited.has(key) || !isPassable(context, next)) continue;
+      if (visited.has(key) || !isTraversable(context, next)) continue;
 
       const steps = Object.freeze([...current.steps, next]);
       visited.add(key);
       queue.push({ position: next, steps });
-      paths.push(Object.freeze({ destination: next, steps }));
+      if (isPassable(context, next)) paths.push(Object.freeze({ destination: next, steps }));
     }
   }
 
@@ -95,8 +112,12 @@ export const isLegalMovementPath = (
 ): boolean => {
   if (steps.length > context.maximumSteps) return false;
   let current = context.start;
-  for (const step of steps) {
-    if (!isOrthogonallyAdjacent(current, step) || !isPassable(context, step)) return false;
+  for (const [index, step] of steps.entries()) {
+    if (
+      !isOrthogonallyAdjacent(current, step) ||
+      (index === steps.length - 1 ? !isPassable(context, step) : !isTraversable(context, step))
+    )
+      return false;
     current = step;
   }
   return true;
@@ -136,7 +157,7 @@ export const getShortestAdvancePaths = (
       const key = positionKey(next);
       if (
         distances.has(key) ||
-        (!isPassable(context, next) && key !== positionKey(context.start))
+        (!isTraversable(context, next) && key !== positionKey(context.start))
       ) {
         continue;
       }
@@ -162,12 +183,14 @@ export const getShortestAdvancePaths = (
       steps.length === context.maximumSteps ||
       goalKeys.has(positionKey(position))
     ) {
-      paths.push(
-        Object.freeze({
-          destination: freezePosition(position),
-          steps: Object.freeze([...steps]),
-        })
-      );
+      if (isPassable(context, position) || steps.length === 0) {
+        paths.push(
+          Object.freeze({
+            destination: freezePosition(position),
+            steps: Object.freeze([...steps]),
+          })
+        );
+      }
       return;
     }
     for (const offset of NEIGHBOR_OFFSETS) {
@@ -175,7 +198,7 @@ export const getShortestAdvancePaths = (
         row: position.row + offset.row,
         column: position.column + offset.column,
       });
-      if (distances.get(positionKey(next)) === distance - 1 && isPassable(context, next)) {
+      if (distances.get(positionKey(next)) === distance - 1 && isTraversable(context, next)) {
         walk(next, [...steps, next]);
       }
     }

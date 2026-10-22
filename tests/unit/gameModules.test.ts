@@ -31,6 +31,7 @@ class SetupViewSpy {
   error = '';
   deployment: Position | null = null;
   moveSelection: 'destination' | Position | null = null;
+  boardActionSelection: string | null = null;
 
   get view(): HeroGameView {
     assert.ok(this.#view, 'Expected the setup module to render a view');
@@ -88,6 +89,14 @@ class SetupViewSpy {
 
   clearMoveSelection() {
     this.moveSelection = null;
+  }
+
+  chooseBoardAction(selection: string) {
+    this.boardActionSelection = selection;
+  }
+
+  clearBoardAction() {
+    this.boardActionSelection = null;
   }
 }
 
@@ -388,6 +397,152 @@ test('the Hero-turn module can cancel movement before or after choosing a destin
   assert.equal(setup.view.actionsRemaining, 2);
   assert.equal(setup.moveSelection, null);
   assert.equal(board.selectedSquare, null);
+});
+
+test('the Hero-turn module highlights and resolves a Slayer’s Fury move from the board', () => {
+  const base = new GameSession(THE_NEST, { next: () => 0 });
+  completeSoloSetup(base);
+  base.dispatch({ type: 'start-hero-activation', heroId: 'gotrek' });
+  const session = new GameSession(THE_NEST, randomSource, {
+    ...base.state,
+    pendingAbility: { type: 'slayers-fury', heroId: 'gotrek' },
+  });
+  const setup = new SetupViewSpy();
+  const board = new BoardViewSpy();
+  const module = new HeroTurnGameModule({ session, setup, board, randomSource });
+  module.render();
+  const destination = session.heroView.legalAbilityMovePositions[0]!;
+  assert.ok(destination);
+
+  module.handleEvent(new CustomEvent('hero-ability-move-requested'));
+  assert.equal(setup.boardActionSelection, 'ability-move');
+  assert.deepEqual(board.legalSquares, session.heroView.legalAbilityMovePositions);
+  module.handleEvent(new CustomEvent('hero-board-action-cancelled'));
+  assert.equal(setup.boardActionSelection, null);
+  assert.deepEqual(board.legalSquares, []);
+  assert.equal(session.heroView.pendingAbility?.type, 'slayers-fury');
+
+  module.handleEvent(new CustomEvent('hero-ability-move-requested'));
+  module.handleEvent(new CustomEvent('board-square-selected', { detail: destination }));
+  assert.deepEqual(session.heroView.heroes[0]?.position, destination);
+  assert.equal(session.heroView.pendingAbility, null);
+  assert.deepEqual(board.legalSquares, []);
+  assert.equal(setup.boardActionSelection, null);
+});
+
+test('a charge follow-up can target the board between hero activations', () => {
+  const base = new GameSession(THE_NEST, { next: () => 0 });
+  base.dispatch({ type: 'configure-game', mode: 'solo', heroIds: ['malakai'] });
+  base.dispatch({
+    type: 'deploy-hero',
+    heroId: 'malakai',
+    position: { row: 16, column: 3 },
+    facing: 'north',
+  });
+  for (const spawn of THE_NEST.board.spawns) {
+    base.dispatch({ type: 'draw-initial-noise' });
+    base.dispatch({ type: 'place-initial-noise', position: spawn });
+  }
+  const target = { row: 15, column: 3 };
+  const session = new GameSession(THE_NEST, randomSource, {
+    ...base.state,
+    activeHeroId: null,
+    skaven: [
+      {
+        id: 'skaven-1',
+        sourceNoiseId: 'old',
+        definitionId: 'clanrat',
+        position: target,
+        facing: 'south',
+        woundsRemaining: 1,
+      },
+    ],
+    pendingAbility: { type: 'charge', heroId: 'malakai', targetIds: ['skaven-1'] },
+  });
+  const setup = new SetupViewSpy();
+  const board = new BoardViewSpy();
+  const module = new HeroTurnGameModule({ session, setup, board, randomSource });
+  module.render();
+  module.handleEvent(new CustomEvent('hero-ability-fight-requested'));
+  assert.deepEqual(board.legalSquares, [target]);
+  module.handleEvent(new CustomEvent('board-square-selected', { detail: target }));
+  assert.equal(setup.error, '');
+  assert.deepEqual(board.legalSquares, []);
+});
+
+test('placing a Demolition Charge highlights legal features and spends the action on selection', () => {
+  const base = new GameSession(THE_NEST, { next: () => 0 });
+  base.dispatch({ type: 'configure-game', mode: 'solo', heroIds: ['malakai'] });
+  base.dispatch({
+    type: 'deploy-hero',
+    heroId: 'malakai',
+    position: { row: 16, column: 3 },
+    facing: 'north',
+  });
+  for (const spawn of THE_NEST.board.spawns) {
+    base.dispatch({ type: 'draw-initial-noise' });
+    base.dispatch({ type: 'place-initial-noise', position: spawn });
+  }
+  base.dispatch({ type: 'start-hero-activation', heroId: 'malakai' });
+  const session = new GameSession(THE_NEST, randomSource, {
+    ...base.state,
+    heroes: [{ ...base.state.heroes[0]!, position: { row: 15, column: 5 } }],
+  });
+  const setup = new SetupViewSpy();
+  const board = new BoardViewSpy();
+  const module = new HeroTurnGameModule({ session, setup, board, randomSource });
+  module.render();
+  const position = { row: 14, column: 6 };
+  assert.ok(
+    session.heroView.legalChargePositions.some(
+      candidate => candidate.row === position.row && candidate.column === position.column
+    )
+  );
+  module.handleEvent(new CustomEvent('hero-charge-requested'));
+  assert.deepEqual(board.legalSquares, session.heroView.legalChargePositions);
+  module.handleEvent(new CustomEvent('board-square-selected', { detail: position }));
+  assert.deepEqual(session.heroView.demolitionCharge?.position, position);
+  assert.equal(session.heroView.actionsRemaining, 1);
+  assert.deepEqual(board.legalSquares, []);
+});
+
+test('a Skaven-turn Two-Fisted follow-up still offers its board target', () => {
+  const base = new GameSession(THE_NEST, { next: () => 0 });
+  base.dispatch({ type: 'configure-game', mode: 'solo', heroIds: ['snorri'] });
+  base.dispatch({
+    type: 'deploy-hero',
+    heroId: 'snorri',
+    position: { row: 16, column: 3 },
+    facing: 'north',
+  });
+  for (const spawn of THE_NEST.board.spawns) {
+    base.dispatch({ type: 'draw-initial-noise' });
+    base.dispatch({ type: 'place-initial-noise', position: spawn });
+  }
+  const target = { row: 15, column: 3 };
+  const session = new GameSession(THE_NEST, randomSource, {
+    ...base.state,
+    phase: 'skaven',
+    activeHeroId: null,
+    skaven: [
+      {
+        id: 'skaven-1',
+        sourceNoiseId: 'old',
+        definitionId: 'clanrat',
+        position: target,
+        facing: 'south',
+        woundsRemaining: 1,
+      },
+    ],
+    pendingAbility: { type: 'two-fisted', heroId: 'snorri' },
+  });
+  const setup = new SetupViewSpy();
+  const board = new BoardViewSpy();
+  const module = new HeroTurnGameModule({ session, setup, board, randomSource });
+  module.render();
+  assert.deepEqual(session.heroView.legalAbilityFightTargetIds, ['skaven-1']);
+  module.handleEvent(new CustomEvent('hero-ability-fight-requested'));
+  assert.deepEqual(board.legalSquares, [target]);
 });
 
 test('the Hero-turn module automatically resolves a revealed 3C group in solo mode', () => {

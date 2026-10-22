@@ -45,6 +45,11 @@ export interface BoardPresentation {
   readonly legalSquares?: readonly Position[];
   readonly selectedSquare?: Position | null;
   readonly doors?: readonly BoardDoorPresentation[];
+  readonly nests?: readonly {
+    readonly position: Position;
+    readonly status: 'intact' | 'destroyed';
+  }[];
+  readonly demolitionCharge?: Position | null;
 }
 
 const TILE_COLORS = Object.freeze({
@@ -63,7 +68,8 @@ const drawMarker = (
   context: CanvasRenderingContext2D,
   tile: MapTile,
   geometry: BoardGeometry,
-  doorStatus: BoardDoorPresentation['status'] = 'closed'
+  doorStatus: BoardDoorPresentation['status'] = 'closed',
+  nestDestroyed = false
 ) => {
   const { squareSize } = geometry;
   const x = geometry.x + tile.column * squareSize;
@@ -93,12 +99,21 @@ const drawMarker = (
     }
     context.stroke();
   } else if (tile.kind === 'nest') {
-    context.beginPath();
-    context.arc(0, 0, squareSize * 0.26, 0, Math.PI * 2);
-    context.stroke();
-    context.beginPath();
-    context.arc(0, 0, squareSize * 0.08, 0, Math.PI * 2);
-    context.fill();
+    if (nestDestroyed) {
+      context.beginPath();
+      context.moveTo(-squareSize * 0.25, -squareSize * 0.25);
+      context.lineTo(squareSize * 0.25, squareSize * 0.25);
+      context.moveTo(squareSize * 0.25, -squareSize * 0.25);
+      context.lineTo(-squareSize * 0.25, squareSize * 0.25);
+      context.stroke();
+    } else {
+      context.beginPath();
+      context.arc(0, 0, squareSize * 0.26, 0, Math.PI * 2);
+      context.stroke();
+      context.beginPath();
+      context.arc(0, 0, squareSize * 0.08, 0, Math.PI * 2);
+      context.fill();
+    }
   } else if (tile.kind === 'spawn') {
     context.beginPath();
     context.moveTo(0, -squareSize * 0.28);
@@ -223,6 +238,11 @@ export const renderBoard = (
       door.status,
     ])
   );
+  const destroyedNests = new Set(
+    (presentation.nests ?? [])
+      .filter(nest => nest.status === 'destroyed')
+      .map(nest => `${nest.position.row},${nest.position.column}`)
+  );
 
   context.clearRect(0, 0, viewportWidth, viewportHeight);
   context.fillStyle = '#221c18';
@@ -233,16 +253,32 @@ export const renderBoard = (
       const x = geometry.x + tile.column * geometry.squareSize;
       const y = geometry.y + tile.row * geometry.squareSize;
       const doorStatus = doorStatuses.get(`${String(tile.row)},${String(tile.column)}`);
+      const nestDestroyed = destroyedNests.has(`${tile.row},${tile.column}`);
       context.fillStyle =
-        tile.kind === 'door' && doorStatus && doorStatus !== 'closed'
+        (tile.kind === 'door' && doorStatus && doorStatus !== 'closed') || nestDestroyed
           ? TILE_COLORS.floor
           : TILE_COLORS[tile.kind];
       context.fillRect(x, y, geometry.squareSize, geometry.squareSize);
       context.strokeStyle = tile.kind === 'wall' || tile.kind === 'exit' ? '#302a25' : '#554b42';
       context.lineWidth = 1;
       context.strokeRect(x + 0.5, y + 0.5, geometry.squareSize - 1, geometry.squareSize - 1);
-      drawMarker(context, tile, geometry, doorStatus);
+      drawMarker(context, tile, geometry, doorStatus, nestDestroyed);
     }
+  }
+
+  if (presentation.demolitionCharge) {
+    const position = presentation.demolitionCharge;
+    context.save();
+    context.fillStyle = '#f0b451';
+    context.font = `bold ${Math.max(12, geometry.squareSize * 0.45)}px sans-serif`;
+    context.textAlign = 'center';
+    context.textBaseline = 'middle';
+    context.fillText(
+      '✹',
+      geometry.x + (position.column + 0.5) * geometry.squareSize,
+      geometry.y + (position.row + 0.5) * geometry.squareSize
+    );
+    context.restore();
   }
 
   for (const position of presentation.legalSquares ?? []) {

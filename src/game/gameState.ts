@@ -103,6 +103,16 @@ export interface NestState {
   readonly status: 'intact' | 'destroyed';
 }
 
+export type PendingAbility =
+  | { readonly type: 'slayers-fury' | 'two-fisted' | 'hunters-step'; readonly heroId: HeroId }
+  | { readonly type: 'repeater'; readonly heroId: HeroId; readonly attackedIds: readonly string[] }
+  | { readonly type: 'charge'; readonly heroId: HeroId; readonly targetIds: readonly string[] };
+
+export interface DemolitionChargeState {
+  readonly position: Position;
+  readonly feature: 'door' | 'nest';
+}
+
 export interface ReactWindow {
   readonly source: 'skaven' | 'noise';
   readonly sourceId: string;
@@ -142,6 +152,8 @@ export interface GameState {
   readonly guards: readonly HeroId[];
   readonly wards: readonly HeroId[];
   readonly abilityUsage: AbilityUsage;
+  readonly pendingAbility: PendingAbility | null;
+  readonly demolitionCharge: DemolitionChargeState | null;
   readonly pendingCombat: PendingCombat | null;
   readonly pendingSkavenMovement: PendingSkavenMovement | null;
   readonly pendingNoise: PendingNoiseState | null;
@@ -171,6 +183,24 @@ export interface GameState {
 }
 
 export type GameCommand =
+  | {
+      readonly type: 'use-slayers-fury';
+      readonly choice: 'move' | 'fight';
+      readonly position?: Position;
+      readonly skavenId?: string;
+    }
+  | { readonly type: 'use-two-fisted'; readonly skavenId: string }
+  | { readonly type: 'use-hunters-step'; readonly position: Position }
+  | { readonly type: 'skip-ability' }
+  | { readonly type: 'ranged-attack'; readonly heroId: HeroId; readonly skavenId: string }
+  | { readonly type: 'repeater-attack'; readonly skavenId: string }
+  | {
+      readonly type: 'place-demolition-charge';
+      readonly heroId: HeroId;
+      readonly position: Position;
+    }
+  | { readonly type: 'detonate-demolition-charge'; readonly confirmed: boolean }
+  | { readonly type: 'continue-charge'; readonly skavenId: string }
   | { readonly type: 'guard-hero'; readonly heroId: HeroId }
   | {
       readonly type: 'ward-hero' | 'react-ward-hero';
@@ -293,6 +323,28 @@ export type GameCommand =
 
 export type GameEvent =
   | {
+      readonly type: 'ability-choice-opened';
+      readonly ability: PendingAbility['type'];
+      readonly heroId: HeroId;
+    }
+  | {
+      readonly type: 'ability-skipped';
+      readonly ability: PendingAbility['type'];
+      readonly heroId: HeroId;
+    }
+  | {
+      readonly type: 'ability-moved';
+      readonly heroId: HeroId;
+      readonly ability: 'slayers-fury' | 'hunters-step';
+      readonly from: Position;
+      readonly to: Position;
+    }
+  | {
+      readonly type: 'demolition-charge-placed' | 'demolition-charge-detonated';
+      readonly position: Position;
+    }
+  | { readonly type: 'nest-destroyed'; readonly position: Position }
+  | {
       readonly type:
         | 'guard-placed'
         | 'guard-triggered'
@@ -359,7 +411,16 @@ export type GameEvent =
   | {
       readonly type: 'action-spent';
       readonly heroId: HeroId;
-      readonly action: 'dash' | 'interact' | 'fight' | 'guard' | 'ward';
+      readonly action:
+        | 'dash'
+        | 'interact'
+        | 'fight'
+        | 'guard'
+        | 'ward'
+        | 'bow'
+        | 'arcane-bolt'
+        | 'repeater'
+        | 'charge';
       readonly actionsRemaining: number;
     }
   | {
@@ -476,6 +537,8 @@ export interface HeroGameView {
   readonly initialNoiseCount: number;
   readonly remainingNoiseCount: number;
   readonly doors: readonly DoorState[];
+  readonly nests: readonly NestState[];
+  readonly demolitionCharge: DemolitionChargeState | null;
   readonly activeHeroId: HeroId | null;
   readonly actionsRemaining: number | null;
   readonly movementRemaining: number | null;
@@ -506,11 +569,16 @@ export interface HeroGameView {
   readonly legalMovePaths: readonly ReachablePath[];
   readonly legalDoorInteractions: readonly Position[];
   readonly legalFightTargetIds: readonly string[];
+  readonly legalRangedTargetIds: readonly string[];
+  readonly legalAbilityMovePositions: readonly Position[];
+  readonly legalAbilityFightTargetIds: readonly string[];
+  readonly legalChargePositions: readonly Position[];
   readonly combatLog: readonly CombatResult[];
   readonly guards: readonly HeroId[];
   readonly wards: readonly HeroId[];
   readonly abilityUsage: AbilityUsage;
   readonly pendingCombat: PendingCombat | null;
+  readonly pendingAbility: PendingAbility | null;
   readonly pendingSkavenMovement: PendingSkavenMovement | null;
 }
 
@@ -594,6 +662,22 @@ const freezeState = (state: GameState): GameState =>
     guards: Object.freeze([...state.guards]),
     wards: Object.freeze([...state.wards]),
     abilityUsage: Object.freeze({ ...state.abilityUsage }),
+    pendingAbility: state.pendingAbility
+      ? Object.freeze({
+          ...state.pendingAbility,
+          ...(state.pendingAbility.type === 'repeater'
+            ? { attackedIds: Object.freeze([...state.pendingAbility.attackedIds]) }
+            : state.pendingAbility.type === 'charge'
+              ? { targetIds: Object.freeze([...state.pendingAbility.targetIds]) }
+              : {}),
+        })
+      : null,
+    demolitionCharge: state.demolitionCharge
+      ? Object.freeze({
+          ...state.demolitionCharge,
+          position: freezePosition(state.demolitionCharge.position),
+        })
+      : null,
     pendingCombat: state.pendingCombat
       ? (Object.freeze({
           ...freezeCombatResult(state.pendingCombat),
@@ -681,6 +765,8 @@ export const createInitialGameState = (mission: MissionDefinition): GameState =>
     guards: [],
     wards: [],
     abilityUsage: EMPTY_ABILITY_USAGE,
+    pendingAbility: null,
+    demolitionCharge: null,
     pendingCombat: null,
     pendingSkavenMovement: null,
     pendingNoise: null,
@@ -717,7 +803,9 @@ export const restoreGameState = (state: GameState, mission: MissionDefinition): 
     ...state,
     guards: state.guards ?? [],
     wards: state.wards ?? [],
-    abilityUsage: state.abilityUsage ?? EMPTY_ABILITY_USAGE,
+    abilityUsage: { ...EMPTY_ABILITY_USAGE, ...state.abilityUsage },
+    pendingAbility: state.pendingAbility ?? null,
+    demolitionCharge: state.demolitionCharge ?? null,
     pendingCombat: state.pendingCombat ?? null,
     pendingSkavenMovement: state.pendingSkavenMovement ?? null,
   });
@@ -763,6 +851,18 @@ const samePosition = (left: Position, right: Position) =>
 
 const isAdjacent = (left: Position, right: Position) =>
   Math.max(Math.abs(left.row - right.row), Math.abs(left.column - right.column)) === 1;
+
+const isHeroInMeleeRange = (state: GameState, hero: HeroState): boolean =>
+  hero.position !== null &&
+  state.skaven.some(skaven => isAdjacent(hero.position!, skaven.position));
+
+const assertRangedAttackAvailable = (state: GameState, hero: HeroState): void => {
+  if (isHeroInMeleeRange(state, hero))
+    throw new RulesError(
+      'RANGED_ATTACK_IN_MELEE',
+      'Move out of melee range before attacking at range'
+    );
+};
 
 const isHeroEligible = (state: GameState, hero: HeroState) =>
   hero.woundsRemaining > 0 && hero.position !== null && !state.exitedHeroIds.includes(hero.id);
@@ -811,7 +911,10 @@ const getSkavenMovementContext = (
   board: mission.board,
   start: skaven.position,
   maximumSteps,
-  closedDoors: state.doors.filter(door => door.status === 'closed').map(door => door.position),
+  closedDoors:
+    skaven.definitionId === 'rat-ogor'
+      ? []
+      : state.doors.filter(door => door.status === 'closed').map(door => door.position),
   blockedPositions: [
     ...state.heroes.flatMap(hero => (hero.position ? [hero.position] : [])),
     ...state.skaven
@@ -820,6 +923,12 @@ const getSkavenMovementContext = (
     ...state.concealedNoise.map(noise => noise.position),
     ...state.revealedNoise.map(noise => noise.position),
   ],
+  traversablePositions:
+    skaven.definitionId === 'gutter-runner'
+      ? state.skaven
+          .filter(candidate => candidate.id !== skaven.id && candidate.definitionId === 'clanrat')
+          .map(candidate => candidate.position)
+      : [],
   exitOpen: state.nests.every(nest => nest.status === 'destroyed'),
 });
 
@@ -1089,7 +1198,7 @@ export const getLegalSkavenDoorInteractions = (
 };
 
 export const getLegalFightTargetIds = (state: GameState): readonly string[] => {
-  if (state.pendingCombat) return Object.freeze([]);
+  if (state.pendingCombat || state.pendingAbility) return Object.freeze([]);
   if (
     state.phase !== 'hero' ||
     !state.activeHeroId ||
@@ -1110,6 +1219,116 @@ export const getLegalFightTargetIds = (state: GameState): readonly string[] => {
           ) === 1
       )
       .map(skaven => skaven.id)
+  );
+};
+
+export const getLegalRangedTargetIds = (
+  state: GameState,
+  mission: MissionDefinition
+): readonly string[] => {
+  assertMissionMatches(state, mission);
+  if (
+    state.pendingCombat ||
+    state.pendingAbility ||
+    state.phase !== 'hero' ||
+    !state.activeHeroId ||
+    state.revealedNoise.length > 0
+  )
+    return Object.freeze([]);
+  const hero = state.heroes.find(candidate => candidate.id === state.activeHeroId);
+  if (!hero?.position || !['ulrika', 'maximilian', 'malakai'].includes(hero.id))
+    return Object.freeze([]);
+  const cost = hero.id === 'ulrika' ? 1 : 2;
+  if ((state.actionsRemaining ?? 0) < cost) return Object.freeze([]);
+  return Object.freeze(getRangedTargetsForHero(state, mission, hero.id));
+};
+
+export const getLegalAbilityMovePositions = (
+  state: GameState,
+  mission: MissionDefinition
+): readonly Position[] => {
+  const pending = state.pendingAbility;
+  if (!pending || !['slayers-fury', 'hunters-step'].includes(pending.type))
+    return Object.freeze([]);
+  const hero = state.heroes.find(candidate => candidate.id === pending.heroId);
+  if (!hero?.position) return Object.freeze([]);
+  return Object.freeze(
+    getReachablePaths(getMovementContext(state, mission, hero, 1))
+      .filter(path => path.steps.length === 1)
+      .map(path => path.destination)
+  );
+};
+
+export const getLegalAbilityFightTargetIds = (
+  state: GameState,
+  mission: MissionDefinition
+): readonly string[] => {
+  const pending = state.pendingAbility;
+  if (!pending) return Object.freeze([]);
+  if (pending.type === 'charge')
+    return Object.freeze(
+      pending.targetIds.filter(id => state.skaven.some(skaven => skaven.id === id))
+    );
+  if (pending.type === 'repeater')
+    return Object.freeze(
+      getRangedTargetsForHero(state, mission, pending.heroId).filter(
+        id => !pending.attackedIds.includes(id)
+      )
+    );
+  if (pending.type !== 'slayers-fury' && pending.type !== 'two-fisted') return Object.freeze([]);
+  const hero = state.heroes.find(candidate => candidate.id === pending.heroId);
+  if (!hero?.position) return Object.freeze([]);
+  return Object.freeze(
+    state.skaven
+      .filter(
+        skaven =>
+          isAdjacent(hero.position!, skaven.position) &&
+          (pending.type !== 'two-fisted' || skaven.definitionId === 'clanrat')
+      )
+      .map(skaven => skaven.id)
+  );
+};
+
+const getRangedTargetsForHero = (
+  state: GameState,
+  mission: MissionDefinition,
+  heroId: HeroId
+): readonly string[] => {
+  const hero = state.heroes.find(candidate => candidate.id === heroId);
+  if (!hero?.position) return [];
+  if (isHeroInMeleeRange(state, hero)) return [];
+  const closedDoors = state.doors
+    .filter(door => door.status === 'closed')
+    .map(door => door.position);
+  return state.skaven
+    .filter(
+      skaven =>
+        distance(hero.position!, skaven.position) <= 5 &&
+        hasLineOfSight(mission.board, hero.position!, skaven.position, closedDoors)
+    )
+    .map(skaven => skaven.id);
+};
+
+export const getLegalChargePositions = (state: GameState): readonly Position[] => {
+  if (
+    state.phase !== 'hero' ||
+    state.pendingCombat ||
+    state.pendingAbility ||
+    state.revealedNoise.length > 0 ||
+    state.activeHeroId !== 'malakai' ||
+    (state.actionsRemaining ?? 0) < 1 ||
+    state.abilityUsage.demolitionChargeUsed
+  )
+    return Object.freeze([]);
+  const hero = state.heroes.find(candidate => candidate.id === 'malakai');
+  if (!hero?.position) return Object.freeze([]);
+  return Object.freeze(
+    [
+      ...state.doors.filter(door => door.status !== 'destroyed'),
+      ...state.nests.filter(nest => nest.status === 'intact'),
+    ]
+      .filter(feature => isAdjacent(hero.position!, feature.position))
+      .map(feature => feature.position)
   );
 };
 
@@ -1607,6 +1826,10 @@ const startHeroActivation = (
     state: freezeState({
       ...state,
       activeHeroId: hero.id,
+      abilityUsage:
+        hero.id === 'gotrek'
+          ? { ...state.abilityUsage, slayersFuryUsed: false }
+          : state.abilityUsage,
       guards: state.guards.filter(id => id !== hero.id),
       actionsRemaining: actions,
       movementRemaining: movement,
@@ -1941,6 +2164,11 @@ const placeRevealedSkaven = (
     nextState = completed.state;
     events.push(...completed.events);
   }
+  if (nextState.revealedNoise.length === 0 && nextState.pendingSkavenMovement) {
+    const resumed = continueSkavenMovement(nextState, mission, randomSource);
+    nextState = resumed.state;
+    events.push(...resumed.events);
+  }
   return Object.freeze({ state: freezeState(nextState), events: Object.freeze(events) });
 };
 
@@ -1966,6 +2194,261 @@ const fightSkaven = (
   }
 
   return beginCombat(state, hero, skaven, 'hero', randomSource);
+};
+
+const rangedAttack = (
+  state: GameState,
+  command: Extract<GameCommand, { type: 'ranged-attack' }>,
+  mission: MissionDefinition,
+  randomSource: RandomSource
+): CommandResult => {
+  const hero = getActiveHero(state, command.heroId);
+  assertRangedAttackAvailable(state, hero);
+  const skaven = state.skaven.find(candidate => candidate.id === command.skavenId);
+  if (!skaven || !getLegalRangedTargetIds(state, mission).includes(skaven.id))
+    throw new RulesError(
+      'INVALID_RANGED_TARGET',
+      'Choose an enemy in line of sight within 5 squares'
+    );
+  const cost = hero.id === 'ulrika' ? 1 : 2;
+  if (hero.id === 'malakai') {
+    const actionsRemaining = state.actionsRemaining! - cost;
+    const pendingAbility: PendingAbility = {
+      type: 'repeater',
+      heroId: hero.id,
+      attackedIds: [skaven.id],
+    };
+    const begun = beginCombat(
+      { ...state, actionsRemaining, pendingAbility },
+      hero,
+      skaven,
+      'repeater',
+      randomSource,
+      1
+    );
+    return commandResult(begun.state, [
+      { type: 'action-spent', heroId: hero.id, action: 'repeater', actionsRemaining },
+      ...begun.events,
+    ]);
+  }
+  return beginCombat(
+    state,
+    hero,
+    skaven,
+    'ranged',
+    randomSource,
+    hero.id === 'ulrika' ? 2 : 3,
+    cost
+  );
+};
+
+const skipAbility = (state: GameState): CommandResult => {
+  const pending = state.pendingAbility;
+  if (!pending || pending.type === 'charge')
+    throw new RulesError('ABILITY_CHOICE_REQUIRED', 'There is no optional ability to skip');
+  return commandResult({ ...state, pendingAbility: null }, [
+    { type: 'ability-skipped', ability: pending.type, heroId: pending.heroId },
+  ]);
+};
+
+const moveForAbility = (
+  state: GameState,
+  mission: MissionDefinition,
+  position: Position,
+  type: 'slayers-fury' | 'hunters-step'
+): CommandResult => {
+  const pending = state.pendingAbility;
+  if (!pending || pending.type !== type)
+    throw new RulesError('ABILITY_CHOICE_REQUIRED', `Resolve ${type} first`);
+  const hero = state.heroes.find(candidate => candidate.id === pending.heroId)!;
+  if (
+    !hero.position ||
+    !getLegalAbilityMovePositions(state, mission).some(candidate =>
+      samePosition(candidate, position)
+    )
+  )
+    throw new RulesError('INVALID_MOVEMENT_PATH', 'Choose an adjacent passable, unoccupied square');
+  const next = {
+    ...state,
+    pendingAbility: null,
+    heroes: state.heroes.map(candidate =>
+      candidate.id === hero.id ? { ...candidate, position } : candidate
+    ),
+  };
+  const reveals = revealVisibleNoise(next, mission);
+  return commandResult(reveals.state, [
+    { type: 'ability-moved', heroId: hero.id, ability: type, from: hero.position, to: position },
+    ...reveals.events,
+  ]);
+};
+
+const useSlayersFury = (
+  state: GameState,
+  command: Extract<GameCommand, { type: 'use-slayers-fury' }>,
+  mission: MissionDefinition,
+  randomSource: RandomSource
+): CommandResult => {
+  if (state.pendingAbility?.type !== 'slayers-fury')
+    throw new RulesError('ABILITY_CHOICE_REQUIRED', 'Slayer’s Fury is not available');
+  if (command.choice === 'move') {
+    if (!command.position) throw new RulesError('INVALID_MOVEMENT_PATH', 'Choose a destination');
+    return moveForAbility(state, mission, command.position, 'slayers-fury');
+  }
+  const target = state.skaven.find(candidate => candidate.id === command.skavenId);
+  if (!target || !getLegalAbilityFightTargetIds(state, mission).includes(target.id))
+    throw new RulesError('UNKNOWN_FIGHT_TARGET', 'Choose another adjacent enemy');
+  const hero = state.heroes.find(candidate => candidate.id === 'gotrek')!;
+  return beginCombat({ ...state, pendingAbility: null }, hero, target, 'bonus', randomSource);
+};
+
+const useTwoFisted = (
+  state: GameState,
+  command: Extract<GameCommand, { type: 'use-two-fisted' }>,
+  mission: MissionDefinition,
+  randomSource: RandomSource
+): CommandResult => {
+  if (state.pendingAbility?.type !== 'two-fisted')
+    throw new RulesError('ABILITY_CHOICE_REQUIRED', 'Two-Fisted is not available');
+  const target = state.skaven.find(candidate => candidate.id === command.skavenId);
+  if (!target || !getLegalAbilityFightTargetIds(state, mission).includes(target.id))
+    throw new RulesError('UNKNOWN_FIGHT_TARGET', 'Choose another adjacent Clanrat');
+  const hero = state.heroes.find(candidate => candidate.id === 'snorri')!;
+  return beginCombat({ ...state, pendingAbility: null }, hero, target, 'bonus', randomSource);
+};
+
+const repeaterAttack = (
+  state: GameState,
+  command: Extract<GameCommand, { type: 'repeater-attack' }>,
+  mission: MissionDefinition,
+  randomSource: RandomSource
+): CommandResult => {
+  const pending = state.pendingAbility;
+  if (pending?.type !== 'repeater')
+    throw new RulesError('ABILITY_CHOICE_REQUIRED', 'The Repeater Handgun is not in progress');
+  const hero = state.heroes.find(candidate => candidate.id === pending.heroId)!;
+  assertRangedAttackAvailable(state, hero);
+  const target = state.skaven.find(candidate => candidate.id === command.skavenId);
+  if (!target || !getLegalAbilityFightTargetIds(state, mission).includes(target.id))
+    throw new RulesError(
+      'INVALID_RANGED_TARGET',
+      'Choose a different enemy in range and line of sight'
+    );
+  return beginCombat(
+    { ...state, pendingAbility: { ...pending, attackedIds: [...pending.attackedIds, target.id] } },
+    hero,
+    target,
+    'repeater',
+    randomSource,
+    1
+  );
+};
+
+const placeDemolitionCharge = (
+  state: GameState,
+  command: Extract<GameCommand, { type: 'place-demolition-charge' }>
+): CommandResult => {
+  const hero = getActiveHero(state, command.heroId);
+  if (
+    hero.id !== 'malakai' ||
+    !getLegalChargePositions(state).some(position => samePosition(position, command.position))
+  )
+    throw new RulesError('INVALID_CHARGE_TARGET', 'Choose an adjacent intact door or nest');
+  const feature = state.doors.some(door => samePosition(door.position, command.position))
+    ? 'door'
+    : 'nest';
+  const actionsRemaining = state.actionsRemaining! - 1;
+  return commandResult(
+    {
+      ...state,
+      actionsRemaining,
+      demolitionCharge: { position: command.position, feature },
+      abilityUsage: { ...state.abilityUsage, demolitionChargeUsed: true },
+    },
+    [
+      { type: 'action-spent', heroId: hero.id, action: 'charge', actionsRemaining },
+      { type: 'demolition-charge-placed', position: command.position },
+    ]
+  );
+};
+
+const detonateDemolitionCharge = (
+  state: GameState,
+  command: Extract<GameCommand, { type: 'detonate-demolition-charge' }>,
+  mission: MissionDefinition
+): CommandResult => {
+  const charge = state.demolitionCharge;
+  const malakai = state.heroes.find(hero => hero.id === 'malakai');
+  if (
+    !charge ||
+    !malakai ||
+    !isHeroEligible(state, malakai) ||
+    state.phase !== 'hero' ||
+    state.pendingCombat ||
+    state.pendingAbility ||
+    state.revealedNoise.length > 0
+  )
+    throw new RulesError('ABILITY_NOT_AVAILABLE', 'Detonate a placed charge during a Hero turn');
+  assertRangedAttackAvailable(state, malakai);
+  if (!command.confirmed)
+    throw new RulesError('CONFIRMATION_REQUIRED', 'Confirm detonating the Demolition Charge');
+  const targetIds = state.skaven
+    .filter(skaven => isAdjacent(skaven.position, charge.position))
+    .map(skaven => skaven.id);
+  const changed =
+    charge.feature === 'door'
+      ? {
+          ...state,
+          doors: state.doors.map(door =>
+            samePosition(door.position, charge.position)
+              ? { ...door, status: 'destroyed' as const }
+              : door
+          ),
+        }
+      : {
+          ...state,
+          nests: state.nests.map(nest =>
+            samePosition(nest.position, charge.position)
+              ? { ...nest, status: 'destroyed' as const }
+              : nest
+          ),
+        };
+  const pendingAbility: PendingAbility | null =
+    targetIds.length > 0 ? { type: 'charge', heroId: 'malakai', targetIds } : null;
+  const next = { ...changed, demolitionCharge: null, pendingAbility };
+  const reveals = revealVisibleNoise(next, mission);
+  return commandResult(reveals.state, [
+    { type: 'demolition-charge-detonated', position: charge.position },
+    charge.feature === 'door'
+      ? { type: 'door-destroyed', position: charge.position }
+      : { type: 'nest-destroyed', position: charge.position },
+    ...(pendingAbility
+      ? [
+          {
+            type: 'ability-choice-opened' as const,
+            ability: 'charge' as const,
+            heroId: 'malakai' as const,
+          },
+        ]
+      : []),
+    ...reveals.events,
+  ]);
+};
+
+const continueCharge = (
+  state: GameState,
+  command: Extract<GameCommand, { type: 'continue-charge' }>,
+  randomSource: RandomSource
+): CommandResult => {
+  const pending = state.pendingAbility;
+  if (pending?.type !== 'charge' || !pending.targetIds.includes(command.skavenId))
+    throw new RulesError(
+      'ABILITY_CHOICE_REQUIRED',
+      'Choose an enemy adjacent to the detonated feature'
+    );
+  const target = state.skaven.find(candidate => candidate.id === command.skavenId);
+  if (!target) throw new RulesError('UNKNOWN_FIGHT_TARGET', 'Choose a living enemy');
+  const hero = state.heroes.find(candidate => candidate.id === pending.heroId)!;
+  return beginCombat(state, hero, target, 'charge', randomSource, 3);
 };
 
 const endHeroActivation = (
@@ -2934,16 +3417,19 @@ const beginCombat = (
   hero: HeroState,
   skaven: SkavenState,
   source: PendingCombat['source'],
-  randomSource: RandomSource
+  randomSource: RandomSource,
+  heroDiceOverride?: number,
+  actionCost?: number
 ): CommandResult => {
   const { heroDice, skavenDice } = getFightDice(state, hero, skaven, source === 'skaven');
-  const roll = resolveOpposedRoll(heroDice, skavenDice, randomSource);
+  const roll = resolveOpposedRoll(heroDiceOverride ?? heroDice, skavenDice, randomSource);
   const pendingCombat: PendingCombat = {
     ...roll,
     heroId: hero.id,
     skavenId: skaven.id,
     skavenDefinitionId: skaven.definitionId,
     source,
+    ...(actionCost ? { actionCost } : {}),
     stage: 'rerolls',
     rerolledDice: [],
   };
@@ -3027,7 +3513,11 @@ const rerollFightDie = (
 
 const acceptFightRolls = (state: GameState, randomSource: RandomSource): CommandResult => {
   const combat = requireCombat(state, 'rerolls');
-  if (combat.outcome === 'skaven-won' && state.wards.includes(combat.heroId)) {
+  if (
+    combat.outcome === 'skaven-won' &&
+    !isRangedCombat(combat) &&
+    state.wards.includes(combat.heroId)
+  ) {
     return commandResult({ ...state, pendingCombat: { ...combat, stage: 'ward' } }, [
       { type: 'fight-choice-opened', heroId: combat.heroId, stage: 'ward' },
     ]);
@@ -3078,6 +3568,59 @@ const resolveWard = (state: GameState, randomSource: RandomSource): CommandResul
   ]);
 };
 
+const offerDefeatAbility = (
+  result: CommandResult,
+  combat: PendingCombat,
+  hero: HeroState,
+  skaven: SkavenState,
+  defeated: boolean
+): CommandResult => {
+  if (
+    !defeated ||
+    combat.source === 'bonus' ||
+    combat.source === 'charge' ||
+    combat.source === 'repeater' ||
+    combat.source === 'ranged'
+  )
+    return result;
+  let next = result.state;
+  if (
+    hero.id === 'gotrek' &&
+    next.activeHeroId === hero.id &&
+    !next.abilityUsage.slayersFuryUsed &&
+    hero.woundsRemaining > 0
+  ) {
+    next = {
+      ...next,
+      abilityUsage: { ...next.abilityUsage, slayersFuryUsed: true },
+      pendingAbility: { type: 'slayers-fury', heroId: hero.id },
+    };
+    return commandResult(next, [
+      ...result.events,
+      { type: 'ability-choice-opened', ability: 'slayers-fury', heroId: hero.id },
+    ]);
+  }
+  if (
+    hero.id === 'snorri' &&
+    skaven.definitionId === 'clanrat' &&
+    hero.position &&
+    next.skaven.some(
+      candidate =>
+        candidate.definitionId === 'clanrat' && isAdjacent(hero.position!, candidate.position)
+    )
+  ) {
+    next = { ...next, pendingAbility: { type: 'two-fisted', heroId: hero.id } };
+    return commandResult(next, [
+      ...result.events,
+      { type: 'ability-choice-opened', ability: 'two-fisted', heroId: hero.id },
+    ]);
+  }
+  return result;
+};
+
+const isRangedCombat = (combat: PendingCombat): boolean =>
+  combat.source === 'ranged' || combat.source === 'repeater' || combat.source === 'charge';
+
 const finishCombat = (state: GameState, randomSource: RandomSource): CommandResult => {
   const combat = state.pendingCombat;
   if (!combat) throw new RulesError('NO_PENDING_COMBAT', 'There is no Fight to finish');
@@ -3096,7 +3639,9 @@ const finishCombat = (state: GameState, randomSource: RandomSource): CommandResu
   let next: GameState = { ...state, pendingCombat: null, combatLog: [...state.combatLog, result] };
   let heroDefeated = false;
   let skavenDefeated = false;
-  if (combat.outcome !== 'tie') {
+  if (combat.outcome === 'skaven-won' && isRangedCombat(combat)) {
+    result = { ...result, woundsInflicted: 0 };
+  } else if (combat.outcome !== 'tie') {
     const heroLoses = combat.outcome === 'skaven-won';
     const damage = heroLoses && skaven.definitionId === 'rat-ogor' ? 2 : 1;
     let woundsRemaining = Math.max(
@@ -3152,7 +3697,7 @@ const finishCombat = (state: GameState, randomSource: RandomSource): CommandResu
   }
   events[0] = { type: 'fight-rolled', ...result };
   next = { ...next, combatLog: [...state.combatLog, result] };
-  if (combat.source === 'hero') {
+  if (combat.source === 'hero' || combat.source === 'ranged') {
     if (heroDefeated) {
       next = {
         ...next,
@@ -3166,9 +3711,15 @@ const finishCombat = (state: GameState, randomSource: RandomSource): CommandResu
       };
       events.push({ type: 'hero-activation-ended', heroId: hero.id });
     } else {
-      const actionsRemaining = next.actionsRemaining! - 1;
+      const actionsRemaining = next.actionsRemaining! - (combat.actionCost ?? 1);
       next = { ...next, actionsRemaining };
-      events.push({ type: 'action-spent', heroId: hero.id, action: 'fight', actionsRemaining });
+      events.push({
+        type: 'action-spent',
+        heroId: hero.id,
+        action:
+          combat.source === 'ranged' ? (hero.id === 'ulrika' ? 'bow' : 'arcane-bolt') : 'fight',
+        actionsRemaining,
+      });
     }
   } else if (combat.source === 'skaven') {
     next = { ...next, skavenActionsRemaining: 0 };
@@ -3191,31 +3742,101 @@ const finishCombat = (state: GameState, randomSource: RandomSource): CommandResu
       action: 'fight',
       commandRemaining: next.command,
     });
-    return finishReact(next, events);
+    return offerDefeatAbility(finishReact(next, events), combat, hero, skaven, skavenDefeated);
   } else if (combat.source === 'guard') {
-    if (skavenDefeated && next.pendingSkavenMovement) {
+    if (skavenDefeated && next.pendingSkavenMovement?.skavenId === skaven.id) {
       next = { ...next, pendingSkavenMovement: null };
       const finished = finishSkavenActivation(next, skaven.id);
-      return commandResult(finished.state, [...events, ...finished.events]);
+      return offerDefeatAbility(
+        commandResult(finished.state, [...events, ...finished.events]),
+        combat,
+        hero,
+        skaven,
+        skavenDefeated
+      );
     }
     const anotherGuard = skavenDefeated ? null : triggerGuard(next, skaven.id, randomSource);
-    if (anotherGuard) return commandResult(anotherGuard.state, [...events, ...anotherGuard.events]);
-    if (next.pendingSkavenMovement) {
+    if (anotherGuard)
+      return offerDefeatAbility(
+        commandResult(anotherGuard.state, [...events, ...anotherGuard.events]),
+        combat,
+        hero,
+        skaven,
+        skavenDefeated
+      );
+    if (next.pendingSkavenMovement && next.revealedNoise.length === 0) {
       const resumed = continueSkavenMovement(
         next,
         getMissionDefinition(next.missionId),
         randomSource
       );
-      return commandResult(resumed.state, [...events, ...resumed.events]);
+      return offerDefeatAbility(
+        commandResult(resumed.state, [...events, ...resumed.events]),
+        combat,
+        hero,
+        skaven,
+        skavenDefeated
+      );
     }
-    const placed = finishGuardPlacement(next, skaven.sourceNoiseId);
-    return commandResult(placed.state, [...events, ...placed.events]);
+    const placed = finishGuardPlacement(next, skaven.sourceNoiseId, randomSource);
+    return offerDefeatAbility(
+      commandResult(placed.state, [...events, ...placed.events]),
+      combat,
+      hero,
+      skaven,
+      skavenDefeated
+    );
   }
-  return commandResult(next, events);
+  if (combat.source === 'charge' && next.pendingAbility?.type === 'charge') {
+    const remaining = next.pendingAbility.targetIds.filter(
+      id => id !== skaven.id && next.skaven.some(candidate => candidate.id === id)
+    );
+    next = {
+      ...next,
+      pendingAbility:
+        remaining.length > 0 ? { ...next.pendingAbility, targetIds: remaining } : null,
+    };
+  }
+  if (
+    heroDefeated &&
+    combat.source !== 'hero' &&
+    combat.source !== 'ranged' &&
+    next.activeHeroId === hero.id
+  ) {
+    next = {
+      ...next,
+      activeHeroId: null,
+      actionsRemaining: null,
+      movementRemaining: null,
+      facingChangeAvailable: false,
+      dashUsed: false,
+      pushUsed: false,
+      activatedHeroIds: [...next.activatedHeroIds, hero.id],
+    };
+    events.push({ type: 'hero-activation-ended', heroId: hero.id });
+  }
+  if (heroDefeated && combat.source === 'repeater') next = { ...next, pendingAbility: null };
+  if (combat.source === 'repeater' && next.pendingAbility?.type === 'repeater') {
+    const remaining = getLegalAbilityFightTargetIds(next, getMissionDefinition(next.missionId));
+    if (next.pendingAbility.attackedIds.length >= 3 || remaining.length === 0)
+      next = { ...next, pendingAbility: null };
+  }
+  if (combat.source === 'ranged' && hero.id === 'ulrika' && !heroDefeated) {
+    next = { ...next, pendingAbility: { type: 'hunters-step', heroId: hero.id } };
+    events.push({ type: 'ability-choice-opened', ability: 'hunters-step', heroId: hero.id });
+  }
+  return offerDefeatAbility(commandResult(next, events), combat, hero, skaven, skavenDefeated);
 };
 
-const finishGuardPlacement = (state: GameState, noiseId: string): CommandResult => {
+const finishGuardPlacement = (
+  state: GameState,
+  noiseId: string,
+  randomSource: RandomSource
+): CommandResult => {
   if (state.revealedNoise.some(noise => noise.id === noiseId)) return commandResult(state, []);
+  if (state.pendingSkavenMovement && state.revealedNoise.length === 0) {
+    return continueSkavenMovement(state, getMissionDefinition(state.missionId), randomSource);
+  }
   if (
     state.skavenTurnStep === 'reinforce' &&
     state.revealedNoise.length === 0 &&
@@ -3275,8 +3896,16 @@ const continueSkavenMovement = (
   let from = skaven.position;
   for (let index = 0; index < movement.remainingPath.length; index++) {
     const to = movement.remainingPath[index]!;
+    const smashedDoor =
+      skaven.definitionId === 'rat-ogor' &&
+      next.doors.some(door => door.status === 'closed' && samePosition(door.position, to));
     next = {
       ...next,
+      doors: smashedDoor
+        ? next.doors.map(door =>
+            samePosition(door.position, to) ? { ...door, status: 'destroyed' as const } : door
+          )
+        : next.doors,
       skaven: next.skaven.map(candidate =>
         candidate.id === skaven.id ? { ...candidate, position: to } : candidate
       ),
@@ -3286,9 +3915,16 @@ const continueSkavenMovement = (
         spacesMoved: movement.spacesMoved + index + 1,
       },
     };
+    if (smashedDoor) events.push({ type: 'door-destroyed', position: to });
     events.push({ type: 'skaven-moved', skavenId: skaven.id, from, to });
     const guarded = triggerGuard(next, skaven.id, randomSource);
     if (guarded) return commandResult(guarded.state, [...events, ...guarded.events]);
+    if (smashedDoor) {
+      const reveals = revealVisibleNoise(next, mission);
+      next = reveals.state;
+      events.push(...reveals.events);
+      if (next.revealedNoise.length > 0) return commandResult(next, events);
+    }
     from = to;
   }
   if (skaven.facing !== movement.facing)
@@ -3328,7 +3964,43 @@ export const resolveCommand = (
   ) {
     throw new RulesError('COMBAT_CHOICE_REQUIRED', 'Resolve the pending Fight before continuing');
   }
+  if (
+    state.pendingAbility &&
+    !state.pendingCombat &&
+    ![
+      'use-slayers-fury',
+      'use-two-fisted',
+      'use-hunters-step',
+      'skip-ability',
+      'repeater-attack',
+      'continue-charge',
+      'place-revealed-skaven',
+    ].includes(command.type)
+  ) {
+    throw new RulesError(
+      'ABILITY_CHOICE_REQUIRED',
+      'Resolve the pending ability before continuing'
+    );
+  }
   switch (command.type) {
+    case 'use-slayers-fury':
+      return useSlayersFury(state, command, mission, randomSource);
+    case 'use-two-fisted':
+      return useTwoFisted(state, command, mission, randomSource);
+    case 'use-hunters-step':
+      return moveForAbility(state, mission, command.position, 'hunters-step');
+    case 'skip-ability':
+      return skipAbility(state);
+    case 'ranged-attack':
+      return rangedAttack(state, command, mission, randomSource);
+    case 'repeater-attack':
+      return repeaterAttack(state, command, mission, randomSource);
+    case 'place-demolition-charge':
+      return placeDemolitionCharge(state, command);
+    case 'detonate-demolition-charge':
+      return detonateDemolitionCharge(state, command, mission);
+    case 'continue-charge':
+      return continueCharge(state, command, randomSource);
     case 'guard-hero':
       return guardHero(state, command);
     case 'ward-hero':
@@ -3421,6 +4093,13 @@ export const projectHeroView = (state: GameState): HeroGameView =>
       initialNoiseCount: mission.initialNoiseCount,
       remainingNoiseCount: state.remainingNoiseBag.length,
       doors: Object.freeze(state.doors.map(freezeDoor)),
+      nests: Object.freeze(state.nests.map(freezeNest)),
+      demolitionCharge: state.demolitionCharge
+        ? Object.freeze({
+            ...state.demolitionCharge,
+            position: freezePosition(state.demolitionCharge.position),
+          })
+        : null,
       activeHeroId: state.activeHeroId,
       actionsRemaining: state.actionsRemaining,
       movementRemaining: state.movementRemaining,
@@ -3451,10 +4130,15 @@ export const projectHeroView = (state: GameState): HeroGameView =>
       legalMovePaths: getLegalHeroMovePaths(state, mission),
       legalDoorInteractions: getLegalDoorInteractions(state, mission),
       legalFightTargetIds: getLegalFightTargetIds(state),
+      legalRangedTargetIds: getLegalRangedTargetIds(state, mission),
+      legalAbilityMovePositions: getLegalAbilityMovePositions(state, mission),
+      legalAbilityFightTargetIds: getLegalAbilityFightTargetIds(state, mission),
+      legalChargePositions: getLegalChargePositions(state),
       combatLog: Object.freeze(state.combatLog.map(freezeCombatResult)),
       guards: Object.freeze([...state.guards]),
       wards: Object.freeze([...state.wards]),
       abilityUsage: Object.freeze({ ...state.abilityUsage }),
+      pendingAbility: state.pendingAbility ? Object.freeze({ ...state.pendingAbility }) : null,
       pendingCombat: state.pendingCombat
         ? (Object.freeze({
             ...freezeCombatResult(state.pendingCombat),

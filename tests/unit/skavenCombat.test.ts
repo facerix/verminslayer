@@ -427,9 +427,10 @@ test('a winning hero wounds and removes a defeated Skaven model', () => {
 
   assert.deepEqual(result.state.skaven, []);
   assert.equal(result.state.combatLog.at(-1)?.outcome, 'hero-won');
+  assert.equal(result.state.pendingAbility?.type, 'slayers-fury');
   assert.deepEqual(
     result.events.map(event => event.type),
-    ['fight-rolled', 'model-wounded', 'model-defeated', 'action-spent']
+    ['fight-rolled', 'model-wounded', 'model-defeated', 'action-spent', 'ability-choice-opened']
   );
 });
 

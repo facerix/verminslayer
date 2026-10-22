@@ -117,7 +117,7 @@ test('a smashed door is announced without exposing an unrevealed Noise identity'
     { type: 'reinforcement-started' },
   ]);
   const announcement = setup.shadowRoot!.querySelector('.announcement')!.textContent!;
-  assert.match(announcement, /Door SMASHED at row 7, column 5/);
+  assert.match(announcement, /Door destroyed at row 7, column 5/);
   assert.doesNotMatch(announcement, /Rat Ogor/);
 });
 
@@ -137,6 +137,120 @@ const contentText = (element: {
   children: ArrayLike<Element>;
 }): string =>
   [element.textContent, ...Array.from(element.children, child => contentText(child))].join(' ');
+
+const buttons = (element: TestElement): TestElement[] => [
+  ...(element.tagName === 'button' ? [element] : []),
+  ...element.children.flatMap(buttons),
+];
+
+test('location based hero abilities offer one action button and a board selection prompt', () => {
+  const setup = new GameSetup();
+  const base = new GameSession(THE_NEST, { next: () => 0 }).heroView;
+  setup.view = {
+    ...base,
+    setupStep: 'complete',
+    phase: 'hero',
+    activeHeroId: 'malakai',
+    heroes: [
+      {
+        id: 'malakai',
+        definitionId: 'malakai',
+        position: { row: 14, column: 5 },
+        facing: 'north',
+        woundsRemaining: 2,
+      },
+    ],
+    actionsRemaining: 2,
+    legalChargePositions: [
+      { row: 14, column: 6 },
+      { row: 13, column: 5 },
+    ],
+  };
+  const charge = buttons(setup.shadowRoot as unknown as TestElement).filter(button =>
+    button.textContent.includes('Place Demolition Charge')
+  );
+  assert.equal(charge.length, 1);
+  assert.doesNotMatch(contentText(setup.shadowRoot!), /Place charge · row/);
+  const events: string[] = [];
+  setup.addEventListener('hero-charge-requested', () => events.push('charge'));
+  charge[0]!.dispatchEvent(new Event('click'));
+  assert.deepEqual(events, ['charge']);
+  setup.chooseBoardAction('charge');
+  assert.match(contentText(setup.shadowRoot!), /Select a highlighted target on the board/);
+  assert.match(contentText(setup.shadowRoot!), /Cancel selection/);
+});
+
+test('Demolition Charge detonation is disabled while Malakai is in melee range', () => {
+  const setup = new GameSetup();
+  const base = new GameSession(THE_NEST, { next: () => 0 }).heroView;
+  const view = {
+    ...base,
+    setupStep: 'complete' as const,
+    phase: 'hero' as const,
+    activeHeroId: 'malakai' as const,
+    heroes: [
+      {
+        id: 'malakai' as const,
+        definitionId: 'malakai' as const,
+        position: { row: 15, column: 5 },
+        facing: 'north' as const,
+        woundsRemaining: 2,
+      },
+    ],
+    skaven: [
+      {
+        id: 'enemy',
+        sourceNoiseId: 'old',
+        definitionId: 'clanrat' as const,
+        position: { row: 15, column: 6 },
+        facing: 'south' as const,
+        woundsRemaining: 1,
+      },
+    ],
+    demolitionCharge: { position: { row: 14, column: 6 }, feature: 'door' as const },
+  };
+  setup.view = view;
+  const detonate = () =>
+    buttons(setup.shadowRoot as unknown as TestElement).find(
+      button => button.textContent === 'Detonate Demolition Charge'
+    ) as unknown as HTMLButtonElement;
+  assert.equal(detonate().disabled, true);
+  setup.view = {
+    ...view,
+    skaven: [{ ...view.skaven[0]!, position: { row: 13, column: 5 } }],
+  };
+  assert.equal(detonate().disabled, false);
+});
+
+test('pending Slayer’s Fury offers one move and one attack choice for map targets', () => {
+  const setup = new GameSetup();
+  const base = new GameSession(THE_NEST, { next: () => 0 }).heroView;
+  setup.view = {
+    ...base,
+    setupStep: 'complete',
+    phase: 'hero',
+    pendingAbility: { type: 'slayers-fury', heroId: 'gotrek' },
+    legalAbilityFightTargetIds: ['first', 'second'],
+    legalAbilityMovePositions: [
+      { row: 15, column: 3 },
+      { row: 16, column: 4 },
+    ],
+  };
+  assert.deepEqual(
+    buttons(setup.shadowRoot as unknown as TestElement)
+      .map(button => button.textContent)
+      .filter(text => ['Attack', 'Move 1 square', 'Finish ability'].includes(text)),
+    ['Attack', 'Move 1 square', 'Finish ability']
+  );
+  assert.doesNotMatch(contentText(setup.shadowRoot!), /Move to row|Attack Clanrat/);
+  setup.chooseBoardAction('ability-move');
+  assert.deepEqual(
+    buttons(setup.shadowRoot as unknown as TestElement)
+      .map(button => button.textContent)
+      .filter(text => ['Attack', 'Move 1 square', 'Cancel selection'].includes(text)),
+    ['Move 1 square', 'Cancel selection']
+  );
+});
 
 const fightView = (): import('../../src/game/gameState.ts').HeroGameView => ({
   ...new GameSession(THE_NEST, { next: () => 0 }).heroView,

@@ -40,6 +40,8 @@ interface BoardView {
   selectedSquare: Position | null;
   noiseTokens: readonly BoardNoisePresentation[];
   doors: readonly BoardDoorPresentation[];
+  nests?: readonly { readonly position: Position; readonly status: 'intact' | 'destroyed' }[];
+  demolitionCharge?: Position | null;
   skaven: readonly BoardSkavenPresentation[];
 }
 
@@ -185,6 +187,8 @@ export class SkavenTurnGameModule implements GameModule {
       position: door.position,
       status: door.status,
     }));
+    this.#board.nests = view.nests;
+    this.#board.demolitionCharge = view.demolitionCharge?.position ?? null;
     this.#renderLegalSquares(view);
   }
 
