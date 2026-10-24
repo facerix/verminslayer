@@ -1,6 +1,6 @@
 // Service Worker for Verminslayer - Production Version
 // Import shared caching core with cache-busting query parameter
-const VERSION = '0.1.9';
+const VERSION = '0.1.10';
 importScripts(`/sw-resources.js?v=${VERSION}`);
 importScripts(`/sw-core.js?v=${VERSION}`);
 

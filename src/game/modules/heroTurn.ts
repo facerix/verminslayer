@@ -31,7 +31,9 @@ interface HeroTurnView {
   chooseMoveDestination(): void;
   chooseMoveFacing(destination: Position): void;
   clearMoveSelection(): void;
-  chooseBoardAction(selection: 'ranged' | 'charge' | 'ability-fight' | 'ability-move'): void;
+  chooseBoardAction(
+    selection: 'ranged' | 'charge' | 'nest' | 'ability-fight' | 'ability-move'
+  ): void;
   clearBoardAction(): void;
 }
 
@@ -59,6 +61,7 @@ type SelectionMode =
   | 'fight'
   | 'ranged'
   | 'charge'
+  | 'nest'
   | 'ability-fight'
   | 'ability-move'
   | 'skaven-placement'
@@ -109,6 +112,7 @@ const HERO_COMMAND_TYPES = new Set<GameCommand['type']>([
   'dash-hero',
   'push-hero',
   'interact-door',
+  'destroy-nest',
   'fight-skaven',
   'place-revealed-skaven',
   'end-hero-activation',
@@ -126,6 +130,7 @@ export class HeroTurnGameModule implements GameModule {
     'hero-fight-requested',
     'hero-ranged-requested',
     'hero-charge-requested',
+    'hero-nest-requested',
     'hero-ability-fight-requested',
     'hero-ability-move-requested',
     'hero-board-action-cancelled',
@@ -218,6 +223,7 @@ export class HeroTurnGameModule implements GameModule {
     if (event.type === 'hero-fight-requested') return this.#handleFightRequest();
     if (event.type === 'hero-ranged-requested') return this.#handleBoardActionRequest('ranged');
     if (event.type === 'hero-charge-requested') return this.#handleBoardActionRequest('charge');
+    if (event.type === 'hero-nest-requested') return this.#handleBoardActionRequest('nest');
     if (event.type === 'hero-ability-fight-requested')
       return this.#handleBoardActionRequest('ability-fight');
     if (event.type === 'hero-ability-move-requested')
@@ -314,16 +320,20 @@ export class HeroTurnGameModule implements GameModule {
     return true;
   }
 
-  #handleBoardActionRequest(mode: 'ranged' | 'charge' | 'ability-fight' | 'ability-move'): boolean {
+  #handleBoardActionRequest(
+    mode: 'ranged' | 'charge' | 'nest' | 'ability-fight' | 'ability-move'
+  ): boolean {
     const view = this.#session.heroView;
     const legal =
       mode === 'ranged'
         ? view.legalRangedTargetIds
         : mode === 'charge'
           ? view.legalChargePositions
-          : mode === 'ability-fight'
-            ? view.legalAbilityFightTargetIds
-            : view.legalAbilityMovePositions;
+          : mode === 'nest'
+            ? view.legalNestInteractions
+            : mode === 'ability-fight'
+              ? view.legalAbilityFightTargetIds
+              : view.legalAbilityMovePositions;
     const pendingChoice = mode === 'ability-fight' || mode === 'ability-move';
     if ((!pendingChoice && view.phase !== 'hero') || legal.length === 0) return false;
     this.#selectionMode = mode;
@@ -333,7 +343,11 @@ export class HeroTurnGameModule implements GameModule {
   }
 
   #handleBoardActionCancel(): boolean {
-    if (!['ranged', 'charge', 'ability-fight', 'ability-move'].includes(this.#selectionMode ?? ''))
+    if (
+      !['ranged', 'charge', 'nest', 'ability-fight', 'ability-move'].includes(
+        this.#selectionMode ?? ''
+      )
+    )
       return false;
     this.#clearSelection();
     return true;
@@ -400,6 +414,8 @@ export class HeroTurnGameModule implements GameModule {
           heroId: view.activeHeroId!,
           position,
         });
+      } else if (this.#selectionMode === 'nest') {
+        events = this.#dispatch({ type: 'destroy-nest', heroId: view.activeHeroId!, position });
       } else if (this.#selectionMode === 'ability-move') {
         if (
           !view.legalAbilityMovePositions.some(candidate => this.#samePosition(candidate, position))
@@ -476,15 +492,17 @@ export class HeroTurnGameModule implements GameModule {
                   .map(skaven => skaven.position)
               : this.#selectionMode === 'charge'
                 ? view.legalChargePositions
-                : this.#selectionMode === 'ability-move'
-                  ? view.legalAbilityMovePositions
-                  : this.#selectionMode === 'ability-fight'
-                    ? view.skaven
-                        .filter(skaven => view.legalAbilityFightTargetIds.includes(skaven.id))
-                        .map(skaven => skaven.position)
-                    : this.#selectionMode === 'skaven-placement' && view.revealedNoise[0]
-                      ? this.#session.legalSkavenPlacementPositions(view.revealedNoise[0].id)
-                      : [];
+                : this.#selectionMode === 'nest'
+                  ? view.legalNestInteractions
+                  : this.#selectionMode === 'ability-move'
+                    ? view.legalAbilityMovePositions
+                    : this.#selectionMode === 'ability-fight'
+                      ? view.skaven
+                          .filter(skaven => view.legalAbilityFightTargetIds.includes(skaven.id))
+                          .map(skaven => skaven.position)
+                      : this.#selectionMode === 'skaven-placement' && view.revealedNoise[0]
+                        ? this.#session.legalSkavenPlacementPositions(view.revealedNoise[0].id)
+                        : [];
     this.#board.selectedSquare = this.#pendingMoveDestination;
   }
 

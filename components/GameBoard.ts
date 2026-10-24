@@ -250,7 +250,7 @@ export class GameBoard extends HTMLElement {
       ? ` Demolition Charge at row ${this.#demolitionCharge.row + 1}, column ${this.#demolitionCharge.column + 1}.`
       : '';
     description.textContent =
-      'The Nest board: 13 columns by 19 rows, with doors, three nests, three Skaven spawn points, one hero deployment point, and a locked south exit.' +
+      `The Nest board: 13 columns by 19 rows, with doors, three nests, three Skaven spawn points, one hero deployment point, and ${this.#nests.length > 0 && this.#nests.every(nest => nest.status === 'destroyed') ? 'an open' : 'a locked'} south exit.` +
       heroes +
       noise +
       reveals +

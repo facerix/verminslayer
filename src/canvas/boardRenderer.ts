@@ -69,7 +69,8 @@ const drawMarker = (
   tile: MapTile,
   geometry: BoardGeometry,
   doorStatus: BoardDoorPresentation['status'] = 'closed',
-  nestDestroyed = false
+  nestDestroyed = false,
+  exitOpen = false
 ) => {
   const { squareSize } = geometry;
   const x = geometry.x + tile.column * squareSize;
@@ -133,7 +134,7 @@ const drawMarker = (
     context.lineTo(0, squareSize * 0.12);
     context.stroke();
   } else if (tile.kind === 'exit') {
-    context.strokeStyle = '#d9a849';
+    context.strokeStyle = exitOpen ? '#88d894' : '#d9a849';
     context.strokeRect(
       -squareSize * 0.32,
       -squareSize * 0.32,
@@ -243,6 +244,9 @@ export const renderBoard = (
       .filter(nest => nest.status === 'destroyed')
       .map(nest => `${nest.position.row},${nest.position.column}`)
   );
+  const exitOpen =
+    (presentation.nests ?? []).length > 0 &&
+    presentation.nests!.every(nest => nest.status === 'destroyed');
 
   context.clearRect(0, 0, viewportWidth, viewportHeight);
   context.fillStyle = '#221c18';
@@ -255,14 +259,16 @@ export const renderBoard = (
       const doorStatus = doorStatuses.get(`${String(tile.row)},${String(tile.column)}`);
       const nestDestroyed = destroyedNests.has(`${tile.row},${tile.column}`);
       context.fillStyle =
-        (tile.kind === 'door' && doorStatus && doorStatus !== 'closed') || nestDestroyed
+        (tile.kind === 'door' && doorStatus && doorStatus !== 'closed') ||
+        nestDestroyed ||
+        (tile.kind === 'exit' && exitOpen)
           ? TILE_COLORS.floor
           : TILE_COLORS[tile.kind];
       context.fillRect(x, y, geometry.squareSize, geometry.squareSize);
       context.strokeStyle = tile.kind === 'wall' || tile.kind === 'exit' ? '#302a25' : '#554b42';
       context.lineWidth = 1;
       context.strokeRect(x + 0.5, y + 0.5, geometry.squareSize - 1, geometry.squareSize - 1);
-      drawMarker(context, tile, geometry, doorStatus, nestDestroyed);
+      drawMarker(context, tile, geometry, doorStatus, nestDestroyed, exitOpen);
     }
   }
 

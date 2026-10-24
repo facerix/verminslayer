@@ -195,7 +195,7 @@ export const getNextSoloSkavenCommand = (
   randomSource: RandomSource
 ): GameCommand | null => {
   const view = session.heroView;
-  if (view.mode !== 'solo' || view.pendingCombat || view.pendingAbility) return null;
+  if (view.mode !== 'solo' || view.result || view.pendingCombat || view.pendingAbility) return null;
 
   const placement = choosePlacementCommand(session, randomSource);
   if (placement) return placement;

@@ -1,6 +1,6 @@
 # MVP Progress
 
-Last updated: 2026-10-10
+Last updated: 2026-10-21
 
 This is the handoff log for [`mvp-plan.md`](mvp-plan.md). Update it when a reviewable
 slice starts or finishes so a future turn can resume without reconstructing project state
@@ -8,11 +8,10 @@ from Git history.
 
 ## Current status
 
-The ninth reviewable slice, **Active and movement abilities**, is complete in the working
-tree. Hero bonus attacks and movement, three ranged weapons, Demolition Charge, Skitter,
-and Smash use the immutable engine and saved interruption flow. Solo AI pauses for Hero
-choices and resumes after they resolve. The single-game persistence foundation remains in
-place.
+The tenth reviewable slice, **Mission resolution and MVP hardening**, is complete in the
+working tree. The Nest now resolves Nest destruction, the opened Watch Post, hero victory,
+hero elimination, and the Hero Turn 8 timeout. The single-game persistence foundation saves
+the terminal result and rejects further commands after the mission ends.
 
 | Slice | Status | Outcome |
 | --- | --- | --- |
@@ -26,7 +25,7 @@ place.
 | Persistence foundation | Complete | One versioned local save, automatic resume, private-state-safe handoff, and confirmed quit/clear |
 | 8. Reactive combat mechanics | Complete | Guard, rerolls, Ward, death prevention, dice modifiers, and Rat Ogor damage |
 | 9. Active and movement abilities | Complete | Bonus attacks/movement, ranged abilities, charges, Skitter, and Smash |
-| 10. Mission resolution and MVP hardening | Not started | Nests, exit, victory and loss, complete-game scenarios, privacy, UI, and offline verification |
+| 10. Mission resolution and MVP hardening | Complete | Nest actions, exit, terminal victory/loss, 1–5 hero outcome regressions, privacy and offline checks |
 
 ## Completed in slice 1
 
@@ -363,11 +362,37 @@ For the completed Slice 7 plus the persistence foundation:
   were exercised with deterministic engine tests. A full mission playthrough remains in
   Slice 10.
 
+## Completed in slice 10
+
+- Added a validated, adjacent 2-Action Nest interaction. Destroying the third Nest through
+  that interaction or Demolition Charge opens the Watch Post; the public projection,
+  controls, board marker, board description, and event highlight report the change.
+- Added a saved terminal mission result. A surviving hero entering the opened exit wins
+  immediately; the Skaven win as soon as all selected heroes die, or at the end of Hero
+  Turn 8 before any Skaven turn begins. Later commands fail with `GAME_ENDED`.
+- Added a terminal mission panel and result announcement. The solo controller stops on a
+  terminal result, and both service-worker versions advance to `0.1.10`.
+- Added regression scenarios for ordinary and charge-based Nest destruction, exit wins,
+  hero elimination, timeout, and command rejection. Victory and loss scenarios cover
+  rosters of one through five heroes. Existing module scenarios cover complete solo and
+  two-player rounds, including React windows and reinforcement.
+- Updated `AGENTS.md` and `CLAUDE.md` to describe the typed, versioned `GameState` save.
+
+## Slice 10 verification
+
+- Formatting, lint (zero warnings/errors), source/test typecheck, all 227 tests, and the
+  production build pass.
+- A clean local browser game verified setup, deployment, private Noise, saved-game resume,
+  and the two-player pass-device cover. Reloading during a pending private draw restored
+  the cover without exposing its identity in the Hero view or board description.
+- The same preview fit a 700 × 900 tablet viewport without horizontal overflow. With its
+  server stopped, a reload still showed the saved game from the offline application shell.
+- Quit confirmation was tested on the disposable preview game: Cancel kept the game, and
+  confirming cleared it back to roster selection. The preview reported no console warnings
+  or errors.
+
 ## Known follow-up
 
-- Refresh the data-model briefs in `AGENTS.md` and `CLAUDE.md`: they still describe an
-  unmodelled board and the old `DataRecord` fields, while the prototype now saves a typed
-  `GameState` envelope including board state.
 - Define what happens to excess models when heroes or Noise completely seal a revealed
   group's placement area even after Skaven spillover is considered.
 - The development browser still reports `Multiple service workers detected`. This is a
@@ -378,29 +403,8 @@ For the completed Slice 7 plus the persistence foundation:
   bumps both cache versions; revisit the development cache strategy with the service-worker
   lifecycle work above.
 
-## Proposed next slice
+## Next playtest
 
-Build Slice 10, **Mission resolution and MVP hardening**: ordinary nest interactions,
-exit, victory and loss, full-game scenarios, privacy, UI, and offline verification.
-
-## Remaining slice breakdown
-
-### Slice 9: Active and movement abilities
-
-- Add Slayer's Fury and Two-Fisted bonus attacks or movement.
-- Add Kislevite Bow and Hunter's Step, Arcane Bolt, and Repeater Handgun.
-- Add Demolition Charge placement, confirmed detonation, feature destruction, and adjacent
-  attacks.
-- Add Skitter movement through Clanrats and Rat Ogor Smash through closed doors.
-- Track once-per-activation, once-per-round, and once-per-mission usage explicitly.
-
-### Slice 10: Mission resolution and MVP hardening
-
-- Destroy nests through the normal 2-Action mission interaction or Demolition Charge and
-  open the Watch Post exit only after all three are destroyed.
-- Resolve immediate hero victory on exit, immediate Skaven victory when all selected heroes
-  die, and the Hero Turn 8 timeout without another Skaven turn.
-- Add complete solo and two-player round scenarios plus hero elimination, timeout, and
-  successful nest-destruction-and-exit scenarios for rosters of 1 through 5 heroes.
-- Complete desktop/tablet, pass-device privacy, reaction handoff, restart confirmation,
-  offline startup, and console-error verification.
+Run full human playthroughs in solo and two-player mode and record balance and usability
+feedback. The automated scenarios cover the rules outcomes; the browser checks above cover
+the critical setup, privacy, resume, responsive layout, and offline paths.

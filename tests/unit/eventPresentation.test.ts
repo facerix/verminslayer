@@ -65,3 +65,14 @@ test('Brute Strength and Snorri survival highlights describe the effective damag
   assert.match(saved!.detail, /leaves him with 1 Wound/);
   assert.doesNotMatch(saved!.detail, /is defeated/);
 });
+
+test('mission result takes priority over nest and Fight bookkeeping', () => {
+  const result = latestImportantEvent([
+    fight,
+    { type: 'nest-destroyed', position: { row: 9, column: 1 } },
+    { type: 'exit-opened' },
+    { type: 'game-ended', result: { winner: 'heroes', reason: 'exit' } },
+  ]);
+  assert.equal(result?.title, 'Hero victory');
+  assert.match(result!.detail, /Watch Post/);
+});

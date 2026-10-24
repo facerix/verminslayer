@@ -462,8 +462,9 @@ test('a winning Skaven wounds and removes a defeated hero from the board', () =>
   assert.equal(result.state.combatLog.at(-1)?.outcome, 'skaven-won');
   assert.deepEqual(
     result.events.map(event => event.type),
-    ['fight-rolled', 'model-wounded', 'model-defeated', 'hero-activation-ended']
+    ['fight-rolled', 'model-wounded', 'model-defeated', 'hero-activation-ended', 'game-ended']
   );
+  assert.deepEqual(result.state.result, { winner: 'skaven', reason: 'elimination' });
 });
 
 test('Fight rejects non-adjacent or unknown targets without changing state', () => {

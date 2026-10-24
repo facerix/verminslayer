@@ -19,13 +19,25 @@ const NOISE_NAMES: Readonly<Record<NoiseResultId, string>> = {
   nothing: 'Nothing',
 };
 
-// Routine bookkeeping must not overwrite the latest public result. Add new
-// mission events (nest destruction, victory, etc.) here as they are implemented.
+// Routine bookkeeping must not overwrite the latest public result.
 export const latestImportantEvent = (
   events: readonly GameEvent[]
 ): ImportantEventPresentation | null => {
   for (let index = events.length - 1; index >= 0; index--) {
     const event = events[index]!;
+    if (event.type === 'game-ended') {
+      return {
+        title: event.result.winner === 'heroes' ? 'Hero victory' : 'Skaven victory',
+        detail:
+          event.result.reason === 'exit'
+            ? 'A survivor escaped through the Watch Post.'
+            : event.result.reason === 'timeout'
+              ? 'Hero Turn 8 ended before the heroes escaped.'
+              : 'All selected heroes were slain.',
+      };
+    }
+    if (event.type === 'exit-opened')
+      return { title: 'Watch Post open', detail: 'All three Nests are destroyed.' };
     if (event.type === 'noise-revealed') {
       return {
         title: `Noise revealed: ${NOISE_NAMES[event.resultId]}`,

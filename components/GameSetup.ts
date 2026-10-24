@@ -342,7 +342,7 @@ type MoveSelection =
       readonly destination: Position;
     };
 
-type BoardActionSelection = 'ranged' | 'charge' | 'ability-fight' | 'ability-move';
+type BoardActionSelection = 'ranged' | 'charge' | 'nest' | 'ability-fight' | 'ability-move';
 
 const NOISE_RESULT_NAMES: Readonly<Record<NoiseResultId, string>> = Object.freeze({
   'two-clanrats': 'Two Clanrats',
@@ -477,7 +477,16 @@ export class GameSetup extends HTMLElement {
     const placement = reversedEvents.find(event => event.type === 'skaven-placed');
     const choice = reversedEvents.find(event => event.type === 'fight-choice-opened');
     const reroll = reversedEvents.find(event => event.type === 'fight-dice-rerolled');
-    if (choice?.type === 'fight-choice-opened') {
+    if (latest?.type === 'game-ended') {
+      this.#announcement =
+        latest.result.winner === 'heroes'
+          ? 'Hero victory! A survivor escaped through the Watch Post.'
+          : latest.result.reason === 'timeout'
+            ? 'Skaven victory. Hero Turn 8 ended before the heroes escaped.'
+            : 'Skaven victory. All selected heroes were slain.';
+    } else if (latest?.type === 'exit-opened') {
+      this.#announcement = 'All three Nests are destroyed. The Watch Post exit is open.';
+    } else if (choice?.type === 'fight-choice-opened') {
       this.#announcement = `${HERO_DEFINITIONS[choice.heroId].name}: resolve ${choice.stage === 'ward' ? 'the Ward reroll' : 'optional Fight rerolls'} before wounds are applied.`;
     } else if (reroll?.type === 'fight-dice-rerolled' && !fight) {
       this.#announcement = `${HERO_DEFINITIONS[reroll.heroId].name} used ${reroll.ability}: dice ${reroll.dieIndices.map(index => index + 1).join(', ')} now show ${reroll.rolls.join(', ')}.`;
@@ -782,6 +791,22 @@ export class GameSetup extends HTMLElement {
   }
 
   #renderHeroTurn(): HTMLElement {
+    if (this.#view?.result) {
+      const { winner, reason } = this.#view.result;
+      return h('div', { className: 'activation-card' }, [
+        h('p', { className: 'eyebrow', textContent: 'Mission complete' }),
+        h('h2', { textContent: winner === 'heroes' ? 'Hero victory' : 'Skaven victory' }),
+        h('p', {
+          textContent:
+            reason === 'exit'
+              ? 'A surviving hero reached the Watch Post after all three Nests were destroyed.'
+              : reason === 'timeout'
+                ? 'Hero Turn 8 ended before the heroes escaped.'
+                : 'All selected heroes were slain.',
+        }),
+        this.#renderCombatLog(),
+      ]);
+    }
     if (this.#view?.pendingCombat) return this.#renderCombatChoice();
     if (this.#view?.pendingAbility && this.#view.revealedNoise.length === 0)
       return this.#renderPendingAbility();
@@ -945,8 +970,16 @@ export class GameSetup extends HTMLElement {
         disabled: (this.#view?.legalChargePositions.length ?? 0) === 0,
       });
       charge.addEventListener('click', () => this.#dispatchUiEvent('hero-charge-requested'));
+      const nest = h('button', {
+        type: 'button',
+        textContent: 'Destroy Nest · 2 Actions',
+        disabled: (this.#view?.legalNestInteractions.length ?? 0) === 0,
+      });
+      nest.addEventListener('click', () => this.#dispatchUiEvent('hero-nest-requested'));
       const choosingBoardAction =
-        this.#boardActionSelection === 'ranged' || this.#boardActionSelection === 'charge';
+        this.#boardActionSelection === 'ranged' ||
+        this.#boardActionSelection === 'charge' ||
+        this.#boardActionSelection === 'nest';
       const cancelBoardAction = h('button', { type: 'button', textContent: 'Cancel selection' });
       cancelBoardAction.addEventListener('click', () =>
         this.#dispatchUiEvent('hero-board-action-cancelled')
@@ -1012,12 +1045,20 @@ export class GameSetup extends HTMLElement {
           choosingDestination
             ? [move, cancelMove]
             : choosingBoardAction
-              ? [this.#boardActionSelection === 'ranged' ? ranged : charge, cancelBoardAction]
+              ? [
+                  this.#boardActionSelection === 'ranged'
+                    ? ranged
+                    : this.#boardActionSelection === 'nest'
+                      ? nest
+                      : charge,
+                  cancelBoardAction,
+                ]
               : [
                   move,
                   fight,
                   ...(rangedTargets.length ? [ranged] : []),
                   interact,
+                  ...((this.#view?.legalNestInteractions.length ?? 0) > 0 ? [nest] : []),
                   ...((this.#view?.legalChargePositions.length ?? 0) > 0 ? [charge] : []),
                   ...(detonate ? [detonate] : []),
                   dash,

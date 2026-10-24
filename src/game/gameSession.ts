@@ -104,7 +104,7 @@ export class GameSession {
     let nextState = result.state;
     const events = [...result.events];
 
-    while (nextState.revealedNoise[0] && !nextState.pendingCombat) {
+    while (nextState.revealedNoise[0] && !nextState.pendingCombat && !nextState.result) {
       const noise = nextState.revealedNoise[0];
       const positions = getLegalSkavenPlacementPositions(nextState, this.#mission, noise.id);
       if (positions.length !== 1) break;

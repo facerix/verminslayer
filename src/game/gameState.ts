@@ -33,6 +33,10 @@ export type GameMode = 'solo' | 'two-player';
 export type SetupStep = 'select-roster' | 'deploy-heroes' | 'initial-noise' | 'complete';
 export type Facing = 'north' | 'east' | 'south' | 'west';
 export type GamePhase = 'setup' | 'hero' | 'skaven';
+export interface GameResult {
+  readonly winner: 'heroes' | 'skaven';
+  readonly reason: 'exit' | 'elimination' | 'timeout';
+}
 export type SkavenTurnStep = 'activate-skaven' | 'activate-noise' | 'reinforce';
 
 export interface RandomSource {
@@ -139,6 +143,7 @@ export interface GameState {
   readonly mode: GameMode | null;
   readonly round: number;
   readonly phase: GamePhase;
+  readonly result: GameResult | null;
   readonly command: number;
   readonly selectedHeroIds: readonly HeroId[];
   readonly heroes: readonly HeroState[];
@@ -255,6 +260,7 @@ export type GameCommand =
       readonly heroId: HeroId;
       readonly position: Position;
     }
+  | { readonly type: 'destroy-nest'; readonly heroId: HeroId; readonly position: Position }
   | {
       readonly type: 'place-revealed-skaven';
       readonly noiseId: string;
@@ -344,6 +350,9 @@ export type GameEvent =
       readonly position: Position;
     }
   | { readonly type: 'nest-destroyed'; readonly position: Position }
+  | { readonly type: 'exit-opened' }
+  | { readonly type: 'hero-exited'; readonly heroId: HeroId }
+  | { readonly type: 'game-ended'; readonly result: GameResult }
   | {
       readonly type:
         | 'guard-placed'
@@ -420,7 +429,8 @@ export type GameEvent =
         | 'bow'
         | 'arcane-bolt'
         | 'repeater'
-        | 'charge';
+        | 'charge'
+        | 'nest';
       readonly actionsRemaining: number;
     }
   | {
@@ -527,6 +537,9 @@ export interface HeroGameView {
   readonly mode: GameMode | null;
   readonly round: number;
   readonly phase: GamePhase;
+  readonly result: GameResult | null;
+  readonly exitOpen: boolean;
+  readonly legalNestInteractions: readonly Position[];
   readonly command: number;
   readonly selectedHeroIds: readonly HeroId[];
   readonly heroes: readonly HeroState[];
@@ -651,6 +664,7 @@ const revealNoiseState = (
 const freezeState = (state: GameState): GameState =>
   Object.freeze({
     ...state,
+    result: state.result ? Object.freeze({ ...state.result }) : null,
     selectedHeroIds: Object.freeze([...state.selectedHeroIds]),
     heroes: Object.freeze(state.heroes.map(freezeHero)),
     doors: Object.freeze(state.doors.map(freezeDoor)),
@@ -752,6 +766,7 @@ export const createInitialGameState = (mission: MissionDefinition): GameState =>
     mode: null,
     round: 0,
     phase: 'setup',
+    result: null,
     command: 0,
     selectedHeroIds: ['gotrek', 'felix'],
     heroes: [],
@@ -808,6 +823,7 @@ export const restoreGameState = (state: GameState, mission: MissionDefinition): 
     demolitionCharge: state.demolitionCharge ?? null,
     pendingCombat: state.pendingCombat ?? null,
     pendingSkavenMovement: state.pendingSkavenMovement ?? null,
+    result: state.result ?? null,
   });
   projectHeroView(restored);
   return restored;
@@ -1438,6 +1454,25 @@ export const getLegalDoorInteractions = (
   );
 };
 
+export const getLegalNestInteractions = (state: GameState): readonly Position[] => {
+  if (
+    state.phase !== 'hero' ||
+    !state.activeHeroId ||
+    state.result ||
+    state.pendingCombat ||
+    state.revealedNoise.length > 0 ||
+    (state.actionsRemaining ?? 0) < 2
+  )
+    return Object.freeze([]);
+  const hero = state.heroes.find(candidate => candidate.id === state.activeHeroId);
+  if (!hero?.position) return Object.freeze([]);
+  return Object.freeze(
+    state.nests
+      .filter(nest => nest.status === 'intact' && isAdjacent(hero.position!, nest.position))
+      .map(nest => freezePosition(nest.position))
+  );
+};
+
 export const getLegalNoiseSpawnPositions = (
   state: GameState,
   mission: MissionDefinition
@@ -1883,6 +1918,7 @@ const moveHero = (
   let workingState = state;
   const events: GameEvent[] = [];
   let from = hero.position!;
+  let stepsMoved = 0;
   for (const rawStep of command.path) {
     const step = freezePosition(rawStep);
     workingState = {
@@ -1899,10 +1935,16 @@ const moveHero = (
         to: step,
       })
     );
+    stepsMoved++;
     const reveals = revealVisibleNoise(workingState, mission);
     workingState = reveals.state;
     events.push(...reveals.events);
     from = step;
+    if (
+      samePosition(step, mission.board.exit) &&
+      workingState.nests.every(nest => nest.status === 'destroyed')
+    )
+      break;
   }
 
   if (facingChanged) {
@@ -1921,12 +1963,12 @@ const moveHero = (
     );
   }
 
-  const movementRemaining = state.movementRemaining! - command.path.length;
+  const movementRemaining = state.movementRemaining! - stepsMoved;
   events.push(
     Object.freeze({
       type: 'movement-spent' as const,
       heroId: hero.id,
-      spaces: command.path.length,
+      spaces: stepsMoved,
       movementRemaining,
     })
   );
@@ -2056,6 +2098,25 @@ const interactDoor = (
     })
   );
   return Object.freeze({ state: freezeState(workingState), events: Object.freeze(events) });
+};
+
+const destroyNest = (
+  state: GameState,
+  command: Extract<GameCommand, { type: 'destroy-nest' }>
+): CommandResult => {
+  getActiveHero(state, command.heroId);
+  if (!getLegalNestInteractions(state).some(position => samePosition(position, command.position))) {
+    throw new RulesError('INVALID_NEST', 'Destroy an adjacent intact Nest with 2 Actions');
+  }
+  const nests = state.nests.map(nest =>
+    samePosition(nest.position, command.position) ? { ...nest, status: 'destroyed' as const } : nest
+  );
+  const actionsRemaining = state.actionsRemaining! - 2;
+  return commandResult({ ...state, nests, actionsRemaining }, [
+    { type: 'nest-destroyed', position: freezePosition(command.position) },
+    { type: 'action-spent', heroId: command.heroId, action: 'nest', actionsRemaining },
+    ...(nests.every(nest => nest.status === 'destroyed') ? [{ type: 'exit-opened' as const }] : []),
+  ]);
 };
 
 const placeRevealedSkaven = (
@@ -2421,6 +2482,9 @@ const detonateDemolitionCharge = (
     charge.feature === 'door'
       ? { type: 'door-destroyed', position: charge.position }
       : { type: 'nest-destroyed', position: charge.position },
+    ...(charge.feature === 'nest' && changed.nests.every(nest => nest.status === 'destroyed')
+      ? [{ type: 'exit-opened' as const }]
+      : []),
     ...(pendingAbility
       ? [
           {
@@ -2501,6 +2565,13 @@ const endHeroPhase = (
   }
   if (!command.confirmed) {
     throw new RulesError('CONFIRMATION_REQUIRED', 'Confirm ending the Hero phase');
+  }
+  if (state.round >= getMissionDefinition(state.missionId).roundLimit) {
+    const result: GameResult = { winner: 'skaven', reason: 'timeout' };
+    return commandResult({ ...state, result }, [
+      { type: 'hero-phase-ended', round: state.round },
+      { type: 'game-ended', result },
+    ]);
   }
   const skavenActivationIds = state.skaven.map(skaven => skaven.id);
   const noiseActivationIds = state.concealedNoise.map(noise => noise.id);
@@ -3697,6 +3768,28 @@ const finishCombat = (state: GameState, randomSource: RandomSource): CommandResu
   }
   events[0] = { type: 'fight-rolled', ...result };
   next = { ...next, combatLog: [...state.combatLog, result] };
+  if (heroDefeated && next.heroes.every(candidate => candidate.woundsRemaining === 0)) {
+    const missionResult: GameResult = { winner: 'skaven', reason: 'elimination' };
+    return commandResult(
+      {
+        ...next,
+        result: missionResult,
+        activeHeroId: null,
+        actionsRemaining: null,
+        movementRemaining: null,
+        pendingAbility: null,
+        pendingSkavenMovement: null,
+        pendingReact: null,
+      },
+      [
+        ...events,
+        ...(next.activeHeroId === hero.id
+          ? [{ type: 'hero-activation-ended' as const, heroId: hero.id }]
+          : []),
+        { type: 'game-ended', result: missionResult },
+      ]
+    );
+  }
   if (combat.source === 'hero' || combat.source === 'ranged') {
     if (heroDefeated) {
       next = {
@@ -3951,7 +4044,7 @@ const continueSkavenMovement = (
   );
 };
 
-export const resolveCommand = (
+const resolveUncheckedCommand = (
   state: GameState,
   command: GameCommand,
   randomSource: RandomSource
@@ -4030,6 +4123,8 @@ export const resolveCommand = (
       return pushHero(state, command);
     case 'interact-door':
       return interactDoor(state, command, mission);
+    case 'destroy-nest':
+      return destroyNest(state, command);
     case 'place-revealed-skaven':
       return placeRevealedSkaven(state, command, mission, randomSource);
     case 'fight-skaven':
@@ -4070,6 +4165,42 @@ export const resolveCommand = (
   }
 };
 
+export const resolveCommand = (
+  state: GameState,
+  command: GameCommand,
+  randomSource: RandomSource
+): CommandResult => {
+  if (state.result) throw new RulesError('GAME_ENDED', 'This game has ended');
+  const resolved = resolveUncheckedCommand(state, command, randomSource);
+  if (resolved.state.result) return resolved;
+  const surviving = resolved.state.heroes.filter(hero => hero.woundsRemaining > 0);
+  const eliminated = resolved.state.setupStep === 'complete' && surviving.length === 0;
+  const exited = surviving.find(
+    hero =>
+      hero.position &&
+      samePosition(hero.position, getMissionDefinition(state.missionId).board.exit) &&
+      resolved.state.nests.every(nest => nest.status === 'destroyed')
+  );
+  if (!eliminated && !exited) return resolved;
+  const result: GameResult = exited
+    ? { winner: 'heroes', reason: 'exit' }
+    : { winner: 'skaven', reason: 'elimination' };
+  return commandResult(
+    {
+      ...resolved.state,
+      result,
+      exitedHeroIds: exited
+        ? [...resolved.state.exitedHeroIds, exited.id]
+        : resolved.state.exitedHeroIds,
+    },
+    [
+      ...resolved.events,
+      ...(exited ? [{ type: 'hero-exited' as const, heroId: exited.id }] : []),
+      { type: 'game-ended', result },
+    ]
+  );
+};
+
 export const projectHeroView = (state: GameState): HeroGameView =>
   (() => {
     const mission = getMissionDefinition(state.missionId);
@@ -4079,6 +4210,9 @@ export const projectHeroView = (state: GameState): HeroGameView =>
       mode: state.mode,
       round: state.round,
       phase: state.phase,
+      result: state.result ? Object.freeze({ ...state.result }) : null,
+      exitOpen: state.nests.every(nest => nest.status === 'destroyed'),
+      legalNestInteractions: getLegalNestInteractions(state),
       command: state.command,
       selectedHeroIds: Object.freeze([...state.selectedHeroIds]),
       heroes: Object.freeze(state.heroes.map(freezeHero)),
