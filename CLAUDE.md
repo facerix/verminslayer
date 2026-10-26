@@ -84,9 +84,9 @@ private Noise, pending choices, and the terminal mission result. Extend typed
 - **No frameworks, no bundler.** Vanilla TypeScript compiled with `tsc` to `dist/`.
   `strict: true`, `verbatimModuleSyntax: true`, `moduleResolution: "bundler"`.
 - **Import specifiers use `.js`** (compiled output), absolute from root:
-  `import { h } from '/src/domUtils.js'`. Tests are the exception — they import `.ts`
+  `import { h } from '/src/utils.js'`. Tests are the exception — they import `.ts`
   relatively.
-- **DOM creation**: always use `h()` from `/src/domUtils.js`, never `createElement`.
+- **DOM creation**: always use `h()` from `/src/utils.js`, never `createElement`.
 - **Data**: go through the `DataStore` singleton (an `EventTarget`); listen for its
   `change` event (`changeType: "init" | "add" | "update" | "delete"`). Never touch
   localStorage directly for app data.

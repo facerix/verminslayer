@@ -5,7 +5,7 @@ import '/components/ConfirmationModal.js';
 import '/components/UpdateNotification.js';
 import ToastMessage from '/components/ToastMessage.js';
 import DataStore from '/src/DataStore.js';
-import { h } from '/src/domUtils.js';
+import { h } from './src/utils.js';
 import { createGameEventDelegate } from '/src/game/gameModule.js';
 import type { GameModule } from '/src/game/gameModule.js';
 import { GameSession } from '/src/game/gameSession.js';

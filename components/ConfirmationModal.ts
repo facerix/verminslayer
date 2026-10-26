@@ -16,7 +16,7 @@
  *   --confirmation-header-bg: #f5f5f5
  */
 
-import { h, CreateSvg } from '/src/domUtils.js';
+import { h, CreateSvg } from '../src/utils.js';
 
 const closeIconSvg = CreateSvg(
   '<path d="M18 6L6 18M6 6l12 12" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>',

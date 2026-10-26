@@ -2,7 +2,7 @@
  * Node module-resolution hooks for `node --test`.
  *
  * App source imports browser-absolute specifiers ending in `.js`
- * (`/src/domUtils.js`, `/components/Foo.js`) because that is what the browser
+ * (`/src/utils.js`, `/components/Foo.js`) because that is what the browser
  * loads out of `dist/`. Tests run the TypeScript sources directly under Node's
  * native type stripping, so those specifiers need to resolve to `.ts` files.
  */

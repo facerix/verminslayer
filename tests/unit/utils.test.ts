@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 
-import { jsx, listify, pluralize, queryParams } from '../../src/domUtils.ts';
+import { jsx, listify, pluralize, queryParams } from '../../src/utils.ts';
 
 test('queryParams encodes a single key/value', () => {
   assert.equal(queryParams({ a: 'b' }), '?a=b');

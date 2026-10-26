@@ -34,7 +34,7 @@ models, private Noise, pending choices, and the terminal mission result. Extend 
 The project is TypeScript, compiled with `tsc` (no bundler) to `dist/`. `live-server` serves `dist/` as the web root in dev. Key conventions:
 
 - `moduleResolution: "bundler"`, `strict: true`, `verbatimModuleSyntax: true`
-- **Import specifiers use `.js`**, not `.ts` — they refer to the compiled output the browser loads (e.g. `import { h } from '/src/domUtils.js'`). The TS compiler resolves the `.ts` source. The one exception: files under `tests/` import `.ts` directly so `node --test` can run them without a build step.
+- **Import specifiers use `.js`**, not `.ts` — they refer to the compiled output the browser loads (e.g. `import { h } from '/src/utils.js'`). The TS compiler resolves the `.ts` source. The one exception: files under `tests/` import `.ts` directly so `node --test` can run them without a build step.
 - Cross-cutting ambient types (the window-scoped `serviceWorkerManager`, custom `WindowEventMap` entries) live in `src/globals.d.ts`. Per-component `HTMLElementTagNameMap` augmentations live in each component's own `.ts` file, right next to the `customElements.define()` call, so the registration and its type entry can't drift apart.
 
 ## Critical Patterns
@@ -54,7 +54,7 @@ DataStore.updateItem(item);
 
 ### DOM Creation
 ```typescript
-import { h } from '/src/domUtils.js';
+import { h } from '/src/utils.js';
 
 // Always use h() — never createElement directly.
 // h() is generic over the tag name, so the return type is HTMLDivElement here.
@@ -84,7 +84,7 @@ el.dataset.id = '456';
 | File | Purpose |
 |------|---------|
 | `src/DataStore.ts` | Central data store (localStorage) |
-| `src/domUtils.ts` | `h()` helper, `isDevelopmentMode()` |
+| `src/utils.ts` | `h()` helper, `isDevelopmentMode()` |
 | `src/ServiceWorkerManager.ts` | Service worker lifecycle |
 | `src/uuid.ts` | Thin wrapper over `crypto.randomUUID()` |
 | `src/globals.d.ts` | Cross-cutting ambient types (`Window.serviceWorkerManager`, `WindowEventMap` for SW events). Per-component tag-name-map entries live in each component file. |
@@ -118,7 +118,7 @@ UpdateNotification (dispatched by component)
 | Type | Convention | Examples |
 |------|------------|---------|
 | HTML files | lowercase | `index.html` |
-| TS modules | camelCase | `domUtils.ts`, `uuid.ts` |
+| TS modules | camelCase | `utils.ts`, `uuid.ts` |
 | Classes | PascalCase | `DataStore`, `ServiceWorkerManager` |
 | Components | PascalCase | `UpdateNotification.ts` |
 | Web Component tags | kebab-case | `<update-notification>` |
@@ -134,7 +134,7 @@ UpdateNotification (dispatched by component)
 
 **Adding a new Web Component:** create `components/Foo.ts`, call `customElements.define('foo-bar', Foo)` at the bottom, and immediately follow it with a `declare global { interface HTMLElementTagNameMap { 'foo-bar': Foo } }` block in the same file. See the Web Components pattern above.
 
-**Service Worker:** Automatically detects dev mode via `isDevelopmentMode()` in `domUtils.ts`. SW files are not compiled — edit them directly.
+**Service Worker:** Automatically detects dev mode via `isDevelopmentMode()` in `utils.ts`. SW files are not compiled — edit them directly.
 
 ## Things to Avoid
 
@@ -144,8 +144,8 @@ UpdateNotification (dispatched by component)
 4. ❌ Adding heavy dependencies without approval
 5. ❌ Relative import paths in app source — always use absolute paths starting with `/`
    ```typescript
-   import { h } from '/src/domUtils.js'; // ✓
-   import { h } from 'src/domUtils.js';  // ✗ — breaks as a module
+   import { h } from '/src/utils.js'; // ✓
+   import { h } from 'src/utils.js';  // ✗ — breaks as a module
    ```
    (Tests are the exception — they use relative paths and `.ts` extension.)
 6. ❌ Editing files in `dist/` — it's regenerated on every build.

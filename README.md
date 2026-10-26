@@ -21,7 +21,7 @@ parts can be translated into the physical board game.
 - **No frameworks, no bundler** - Pure vanilla TypeScript compiled with `tsc` to ES modules
 - **Web Components** - Custom elements in `/components/` with Shadow DOM
 - **Data Store** - Singleton `DataStore` (EventTarget) manages all data in localStorage
-- **DOM Creation** - Use `h()` helper from `src/domUtils.ts` for all DOM manipulation
+- **DOM Creation** - Use `h()` helper from `src/utils.ts` for all DOM manipulation
 - **Service Workers** - Offline-first caching with automatic update notifications (authored in plain JS, not compiled)
 
 ## Requirements
@@ -63,7 +63,7 @@ Keep using `.ts` imports for direct test dependencies; the hook is for transitiv
 ## Coding Standards
 
 - **TypeScript** - `strict: true`, `verbatimModuleSyntax: true`, `moduleResolution: "bundler"`
-- **ES modules** - Always use `import`/`export`. Import paths use the `.js` extension (compiled output), e.g. `import { h } from '/src/domUtils.js'`. The test files are the one exception — they import `.ts` directly so Node can run them without a build step.
+- **ES modules** - Always use `import`/`export`. Import paths use the `.js` extension (compiled output), e.g. `import { h } from '/src/utils.js'`. The test files are the one exception — they import `.ts` directly so Node can run them without a build step.
 - **Private fields** - Use `#fieldName` for encapsulation
 - **const > let** - Prefer `const`, avoid `var`
 - **Arrow functions** - For callbacks
@@ -89,7 +89,7 @@ Keep using `.ts` imports for direct test dependencies; the hook is for transitiv
 ├── src/                       # Core utilities
 │   ├── DataStore.ts           # Singleton data store (localStorage)
 │   ├── ServiceWorkerManager.ts # Service worker lifecycle
-│   ├── domUtils.ts            # DOM helper functions (h() function)
+│   ├── utils.ts               # DOM helper functions (h() function)
 │   ├── uuid.ts                # Thin wrapper over crypto.randomUUID()
 │   └── globals.d.ts           # Ambient types for window-scoped state + custom events
 ├── scripts/
