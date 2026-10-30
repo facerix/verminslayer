@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { renderBoard } from '../../src/canvas/boardRenderer.ts';
-import { THE_NEST } from '../../src/game/missions/theNest.ts';
+import { THE_UNDERBURROW } from '../../src/game/missions/theUnderburrow.ts';
 
 test('hero and Rat Ogor tokens display filled remaining HP and hollow lost HP pips', () => {
   const circles: { radius: number; fill?: string; stroke?: string }[] = [];
@@ -35,7 +35,7 @@ test('hero and Rat Ogor tokens display filled remaining HP and hollow lost HP pi
     },
   };
   const context = recording as unknown as CanvasRenderingContext2D;
-  renderBoard(context, THE_NEST.board, 650, 950, {
+  renderBoard(context, THE_UNDERBURROW.board, 650, 950, {
     heroes: [
       {
         label: 'Go',

@@ -9,6 +9,7 @@ import { pointToSquare } from '/src/canvas/boardGeometry.js';
 import type { BoardGeometry } from '/src/canvas/boardGeometry.js';
 import { h } from '../src/utils.js';
 import type { Position } from '/src/game/map.js';
+import type { MissionDefinition } from '/src/game/missionDefinition.js';
 import { THE_NEST } from '/src/game/missions/theNest.js';
 
 const STYLES = `
@@ -32,8 +33,8 @@ const STYLES = `
 
   .board-frame {
     position: relative;
-    width: min(100%, calc((var(--board-height, 72vh)) * 13 / 19), 39rem);
-    aspect-ratio: 13 / 19;
+    width: min(100%, calc((var(--board-height, 72vh)) * var(--board-ratio, 13 / 13)), 39rem);
+    aspect-ratio: var(--board-ratio, 13 / 13);
     border: 1px solid #5d4c3d;
     border-radius: 0.35rem;
     overflow: hidden;
@@ -67,6 +68,7 @@ export class GameBoard extends HTMLElement {
   #doors: readonly BoardDoorPresentation[] = [];
   #nests: readonly { readonly position: Position; readonly status: 'intact' | 'destroyed' }[] = [];
   #demolitionCharge: Position | null = null;
+  #mission: MissionDefinition = THE_NEST;
 
   constructor() {
     super();
@@ -78,13 +80,23 @@ export class GameBoard extends HTMLElement {
     const description = h('p', {
       id: 'board-description',
       className: 'description',
-      textContent:
-        'The Nest board: 13 columns by 19 rows, with doors, three nests, three Skaven spawn points, one hero deployment point, and a locked south exit.',
+      textContent: '',
     });
     this.#frame = h('div', { className: 'board-frame' }, [this.#canvas, description]);
     shadow.append(h('style', { textContent: STYLES }), this.#frame);
     this.#resizeObserver = new ResizeObserver(() => this.#draw());
     this.#canvas.addEventListener('pointerup', event => this.#selectSquare(event));
+    this.#updateDescription();
+  }
+
+  set mission(mission: MissionDefinition) {
+    this.#mission = mission;
+    this.#frame.style.setProperty(
+      '--board-ratio',
+      `${mission.board.width} / ${mission.board.height}`
+    );
+    this.#updateDescription();
+    this.#draw();
   }
 
   set heroes(heroes: readonly BoardHeroPresentation[]) {
@@ -157,7 +169,7 @@ export class GameBoard extends HTMLElement {
     if (!context) throw new Error('This browser does not provide a 2D canvas context');
 
     context.setTransform(pixelRatio, 0, 0, pixelRatio, 0, 0);
-    this.#geometry = renderBoard(context, THE_NEST.board, width, height, {
+    this.#geometry = renderBoard(context, this.#mission.board, width, height, {
       heroes: this.#heroes,
       skaven: this.#skaven,
       noiseTokens: this.#noiseTokens,
@@ -250,7 +262,7 @@ export class GameBoard extends HTMLElement {
       ? ` Demolition Charge at row ${this.#demolitionCharge.row + 1}, column ${this.#demolitionCharge.column + 1}.`
       : '';
     description.textContent =
-      `The Nest board: 13 columns by 19 rows, with doors, three nests, three Skaven spawn points, one hero deployment point, and ${this.#nests.length > 0 && this.#nests.every(nest => nest.status === 'destroyed') ? 'an open' : 'a locked'} south exit.` +
+      `${this.#mission.name} board: ${this.#mission.board.width} columns by ${this.#mission.board.height} rows, with ${this.#mission.board.doors.length} doors, ${this.#mission.board.nests.length} ${this.#mission.board.nests.length === 1 ? 'nest' : 'nests'}, ${this.#mission.board.spawns.length} Skaven spawn points, one hero deployment point, and ${this.#nests.length > 0 && this.#nests.every(nest => nest.status === 'destroyed') ? 'an open' : 'a locked'} exit.` +
       heroes +
       noise +
       reveals +

@@ -74,5 +74,5 @@ test('mission result takes priority over nest and Fight bookkeeping', () => {
     { type: 'game-ended', result: { winner: 'heroes', reason: 'exit' } },
   ]);
   assert.equal(result?.title, 'Hero victory');
-  assert.match(result!.detail, /Watch Post/);
+  assert.match(result!.detail, /exit/);
 });

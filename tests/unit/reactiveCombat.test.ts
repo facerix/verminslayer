@@ -8,7 +8,7 @@ import {
 } from '../../src/game/gameState.ts';
 import type { GameState, RandomSource } from '../../src/game/gameState.ts';
 import type { HeroId, SkavenId } from '../../src/game/entities.ts';
-import { THE_NEST } from '../../src/game/missions/theNest.ts';
+import { THE_UNDERBURROW } from '../../src/game/missions/theUnderburrow.ts';
 import { GameSession } from '../../src/game/gameSession.ts';
 import { getNextSoloSkavenCommand, runSoloSkavenAi } from '../../src/game/skavenAi.ts';
 import { RulesError } from '../../src/game/rulesError.ts';
@@ -18,7 +18,7 @@ const rolls = (...values: number[]): RandomSource => {
   return { next: () => values[index++] ?? 0 };
 };
 const arena = (heroId: HeroId = 'gotrek', enemy: SkavenId = 'clanrat'): GameState => ({
-  ...createInitialGameState(THE_NEST),
+  ...createInitialGameState(THE_UNDERBURROW),
   mode: 'two-player',
   setupStep: 'complete',
   phase: 'hero',
@@ -113,7 +113,7 @@ test('optional rerolls delay damage, survive JSON resume, and reject rerolling t
   assert.ok(result.state.pendingCombat);
   assert.equal(result.state.heroes[0]!.woundsRemaining, 3);
   assert.equal(result.state.combatLog.length, 0);
-  const restored = restoreGameState(JSON.parse(JSON.stringify(result.state)), THE_NEST);
+  const restored = restoreGameState(JSON.parse(JSON.stringify(result.state)), THE_UNDERBURROW);
   assert.ok(Object.isFrozen(restored.pendingCombat!.heroRolls));
   const rerolled = resolveCommand(
     restored,
@@ -339,7 +339,7 @@ test('Guard reroll interruption resumes the submitted path after reload and open
       ),
     RulesError
   );
-  const resumed = restoreGameState(JSON.parse(JSON.stringify(pending)), THE_NEST);
+  const resumed = restoreGameState(JSON.parse(JSON.stringify(pending)), THE_UNDERBURROW);
   const finished = resolveCommand(resumed, { type: 'accept-fight-rolls' }, rolls(0)).state;
   assert.deepEqual(finished.skaven[0]!.position, { row: 16, column: 4 });
   assert.equal(finished.pendingReact!.source, 'skaven');
@@ -636,7 +636,7 @@ test('legacy saves migrate markers and usage explicitly', () => {
   const legacy = JSON.parse(JSON.stringify(arena()));
   for (const field of ['guards', 'wards', 'abilityUsage', 'pendingCombat', 'pendingSkavenMovement'])
     delete legacy[field];
-  const restored = restoreGameState(legacy, THE_NEST);
+  const restored = restoreGameState(legacy, THE_UNDERBURROW);
   assert.deepEqual(restored.guards, []);
   assert.deepEqual(restored.wards, []);
   assert.equal(restored.pendingCombat, null);
@@ -661,7 +661,7 @@ test('automatic placement failures reject the entire session transaction without
     concealedNoise: [{ id: 'noise', resultId: 'gutter-runner', position: { row: 15, column: 4 } }],
   };
   const saves: GameState[] = [];
-  const session = new GameSession(THE_NEST, rolls(1), state, next => saves.push(next));
+  const session = new GameSession(THE_UNDERBURROW, rolls(1), state, next => saves.push(next));
   const before = session.state;
   assert.throws(
     () =>
@@ -693,7 +693,7 @@ test('solo AI stops for Guard rerolls and resumes through React into the next ro
     remainingNoiseBag: [],
     skaven: [{ ...base.skaven[0]!, position: { row: 14, column: 4 } }],
   };
-  const session = new GameSession(THE_NEST, rolls(0.5, 0, 0.5, 0, 0), state);
+  const session = new GameSession(THE_UNDERBURROW, rolls(0.5, 0, 0.5, 0, 0), state);
   session.dispatch({
     type: 'move-skaven',
     skavenId: 'enemy',

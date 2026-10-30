@@ -744,6 +744,16 @@ const isOnBoard = (position: Position, mission: MissionDefinition) =>
   position.column < mission.board.width;
 
 const assertValidRoster = (heroIds: readonly HeroId[], mission: MissionDefinition) => {
+  if (
+    mission.fixedHeroes &&
+    (heroIds.length !== mission.fixedHeroes.length ||
+      heroIds.some((id, index) => id !== mission.fixedHeroes![index]))
+  ) {
+    throw new RulesError(
+      'INVALID_HERO_ROSTER',
+      `This mission requires ${mission.fixedHeroes.join(' and ')}`
+    );
+  }
   const uniqueIds = new Set(heroIds);
   const allKnown = heroIds.every(
     id => typeof id === 'string' && isHeroId(id) && mission.allowedHeroes.includes(id)
@@ -768,7 +778,7 @@ export const createInitialGameState = (mission: MissionDefinition): GameState =>
     phase: 'setup',
     result: null,
     command: 0,
-    selectedHeroIds: ['gotrek', 'felix'],
+    selectedHeroIds: mission.fixedHeroes ?? ['gotrek', 'felix'],
     heroes: [],
     doors: mission.board.doors.map(position => ({ position, status: 'closed' as const })),
     nests: mission.board.nests.map(position => ({ position, status: 'intact' as const })),

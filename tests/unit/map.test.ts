@@ -2,10 +2,10 @@ import assert from 'node:assert/strict';
 import { test } from 'node:test';
 
 import { parseMap, RulesError } from '../../src/game/map.ts';
-import { THE_NEST, THE_NEST_MAP } from '../../src/game/missions/theNest.ts';
+import { THE_UNDERBURROW, THE_UNDERBURROW_MAP } from '../../src/game/missions/theUnderburrow.ts';
 
-test('The Nest parses as a 13 by 19 board with its required features', () => {
-  const board = THE_NEST.board;
+test('The Underburrow parses as a 13 by 19 board with its required features', () => {
+  const board = THE_UNDERBURROW.board;
 
   assert.equal(board.width, 13);
   assert.equal(board.height, 19);
@@ -21,7 +21,7 @@ test('The Nest parses as a 13 by 19 board with its required features', () => {
 });
 
 test('map positions and rows use zero-based coordinates', () => {
-  const board = THE_NEST.board;
+  const board = THE_UNDERBURROW.board;
 
   assert.equal(board.tiles[0]?.[10]?.kind, 'spawn');
   assert.equal(board.tiles[18]?.[1]?.kind, 'exit');
@@ -52,7 +52,7 @@ test('parseMap rejects unknown symbols with their location', () => {
 });
 
 test('mission startup validation rejects missing required features', () => {
-  const withoutExit = THE_NEST_MAP.replace('E', '#');
+  const withoutExit = THE_UNDERBURROW_MAP.replace('E', '#');
 
   assert.throws(
     () =>

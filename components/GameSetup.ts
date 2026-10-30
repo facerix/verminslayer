@@ -2,7 +2,6 @@ import { latestImportantEvent } from '/src/game/eventPresentation.js';
 import { getRerollAbilities, distance } from '/src/game/reactiveCombat.js';
 import { h } from '../src/utils.js';
 import {
-  ALL_HERO_IDS,
   getSkavenModelIdentifier,
   HERO_DEFINITIONS,
   SKAVEN_DEFINITIONS,
@@ -18,6 +17,7 @@ import type {
 } from '/src/game/gameState.js';
 import type { Position } from '/src/game/map.js';
 import type { NoiseResultId } from '/src/game/missionDefinition.js';
+import { getMissionDefinition } from '/src/game/missions/registry.js';
 
 const STYLES = `
   :host {
@@ -480,12 +480,12 @@ export class GameSetup extends HTMLElement {
     if (latest?.type === 'game-ended') {
       this.#announcement =
         latest.result.winner === 'heroes'
-          ? 'Hero victory! A survivor escaped through the Watch Post.'
+          ? 'Hero victory! A survivor escaped through the exit.'
           : latest.result.reason === 'timeout'
-            ? 'Skaven victory. Hero Turn 8 ended before the heroes escaped.'
+            ? `Skaven victory. Hero Turn ${getMissionDefinition(this.#view!.missionId).roundLimit} ended before the heroes escaped.`
             : 'Skaven victory. All selected heroes were slain.';
     } else if (latest?.type === 'exit-opened') {
-      this.#announcement = 'All three Nests are destroyed. The Watch Post exit is open.';
+      this.#announcement = `All ${this.#view!.nests.length} ${this.#view!.nests.length === 1 ? 'Nest is' : 'Nests are'} destroyed. The exit is open.`;
     } else if (choice?.type === 'fight-choice-opened') {
       this.#announcement = `${HERO_DEFINITIONS[choice.heroId].name}: resolve ${choice.stage === 'ward' ? 'the Ward reroll' : 'optional Fight rerolls'} before wounds are applied.`;
     } else if (reroll?.type === 'fight-dice-rerolled' && !fight) {
@@ -605,12 +605,15 @@ export class GameSetup extends HTMLElement {
   }
 
   #renderSelection(): HTMLElement {
+    const mission = getMissionDefinition(this.#view!.missionId);
+    const fixedHeroes = mission.fixedHeroes;
     const intro = h('div', {}, [
       h('p', { className: 'eyebrow', textContent: 'Game setup' }),
       h('h2', { textContent: 'Choose your company' }),
       h('p', {
-        textContent:
-          'Choose a play mode and 1–5 unique heroes. Gotrek and Felix are selected by default.',
+        textContent: fixedHeroes
+          ? 'Choose a play mode. Gotrek and Felix are your company for this mission.'
+          : 'Choose a play mode and 1–5 unique heroes. Gotrek and Felix are selected by default.',
       }),
     ]);
     const modeFieldset = h('fieldset', {}, [
@@ -623,11 +626,17 @@ export class GameSetup extends HTMLElement {
         false
       ),
     ]);
-    const heroOptions = ALL_HERO_IDS.map(id => {
+    const heroOptions = mission.allowedHeroes.map(id => {
       const definition = HERO_DEFINITIONS[id];
       const selected = this.#view?.selectedHeroIds.includes(id) ?? false;
       return h('label', { className: 'hero-option' }, [
-        h('input', { type: 'checkbox', name: 'hero', value: id, checked: selected }),
+        h('input', {
+          type: 'checkbox',
+          name: 'hero',
+          value: id,
+          checked: selected,
+          disabled: !!fixedHeroes,
+        }),
         h('span', { className: 'hero-name', textContent: definition.name }),
         h('span', {
           className: 'hero-stats',
@@ -646,9 +655,11 @@ export class GameSetup extends HTMLElement {
       const mode = form.querySelector<HTMLInputElement>('input[name="mode"]:checked')?.value as
         | GameMode
         | undefined;
-      const heroIds = [
-        ...form.querySelectorAll<HTMLInputElement>('input[name="hero"]:checked'),
-      ].map(input => input.value as HeroId);
+      const heroIds =
+        fixedHeroes ??
+        [...form.querySelectorAll<HTMLInputElement>('input[name="hero"]:checked')].map(
+          input => input.value as HeroId
+        );
       if (!mode) {
         this.showError('Choose solo or two-player mode.');
         return;
@@ -799,9 +810,9 @@ export class GameSetup extends HTMLElement {
         h('p', {
           textContent:
             reason === 'exit'
-              ? 'A surviving hero reached the Watch Post after all three Nests were destroyed.'
+              ? `A surviving hero reached the exit after destroying ${this.#view!.nests.length} ${this.#view!.nests.length === 1 ? 'Nest' : 'Nests'}.`
               : reason === 'timeout'
-                ? 'Hero Turn 8 ended before the heroes escaped.'
+                ? `Hero Turn ${getMissionDefinition(this.#view!.missionId).roundLimit} ended before the heroes escaped.`
                 : 'All selected heroes were slain.',
         }),
         this.#renderCombatLog(),
@@ -1679,7 +1690,9 @@ export class GameSetup extends HTMLElement {
           ? this.#renderInitialNoise()
           : this.#view?.setupStep === 'complete'
             ? this.#renderHeroTurn()
-            : this.#renderSelection();
+            : this.#view
+              ? this.#renderSelection()
+              : h('div');
     shadow.replaceChildren(
       h('style', { textContent: STYLES }),
       content,

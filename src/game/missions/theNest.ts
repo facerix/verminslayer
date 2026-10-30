@@ -1,75 +1,44 @@
 import { parseMap } from '/src/game/map.js';
-import { ALL_HERO_IDS } from '/src/game/entities.js';
+import { THE_UNDERBURROW } from '/src/game/missions/theUnderburrow.js';
 import type { MissionDefinition, NoiseResultId } from '/src/game/missionDefinition.js';
+import { repeat } from '/src/utils.js';
 
+// Four compact rooms: the heroes enter in the southwest and clear one nest in the northwest.
 export const THE_NEST_MAP = `##########S##
-#..#..#.....#
-#.N#..+.....#
-#..#..#..N:.#
-#.....#...:.#
-#.##..#.:...#
-####+##+#####
-#.....#.~~~~#
-#.~~~.#.....S
-#N~~~.#.~...#
-S.~~~.+.~...#
-#.....#.~...#
-#####+####+##
-#.....#~~...#
-#.::..+....~#
-#.:...#.~~.~#
-#..@..#....~#
-#.....#~~~~~#
-#E###########`;
+#.....#.....#
+#.....+.....#
+S.....#..N..#
+#.....#.....#
+#.....#.....#
+##+####+#####
+#.....#.....#
+#.....+.....#
+#..@..#.....#
+#.....#.....#
+#.....#.....#
+#########E###`;
 
 const board = parseMap(THE_NEST_MAP, {
   width: 13,
-  height: 19,
-  required: {
-    nest: 3,
-    spawn: 3,
-    deployment: 1,
-    exit: 1,
-  },
+  height: 13,
+  required: { nest: 1, spawn: 2, deployment: 1, exit: 1 },
 });
-
-const repeat = (id: NoiseResultId, count: number): readonly NoiseResultId[] =>
-  Object.freeze(Array<NoiseResultId>(count).fill(id));
 
 export const THE_NEST: MissionDefinition = Object.freeze({
   id: 'the-nest',
   name: 'The Nest',
   board,
-  roundLimit: 8,
+  roundLimit: 6,
   firstPhase: 'hero',
-  allowedHeroes: ALL_HERO_IDS,
-  skavenTypes: Object.freeze(['clanrat', 'gutter-runner', 'rat-ogor'] as const),
-  initialNoiseCount: 3,
-  noisePerTurn: 2,
-  noiseResults: Object.freeze({
-    'two-clanrats': Object.freeze({
-      id: 'two-clanrats',
-      models: Object.freeze(['clanrat', 'clanrat'] as const),
-    }),
-    'three-clanrats': Object.freeze({
-      id: 'three-clanrats',
-      models: Object.freeze(['clanrat', 'clanrat', 'clanrat'] as const),
-    }),
-    'gutter-runner': Object.freeze({
-      id: 'gutter-runner',
-      models: Object.freeze(['gutter-runner'] as const),
-    }),
-    'rat-ogor': Object.freeze({
-      id: 'rat-ogor',
-      models: Object.freeze(['rat-ogor'] as const),
-    }),
-    nothing: Object.freeze({ id: 'nothing', models: Object.freeze([]) }),
-  }),
+  allowedHeroes: Object.freeze(['gotrek', 'felix'] as const),
+  fixedHeroes: Object.freeze(['gotrek', 'felix'] as const),
+  skavenTypes: Object.freeze(['clanrat'] as const),
+  initialNoiseCount: 2,
+  noisePerTurn: 1,
+  noiseResults: THE_UNDERBURROW.noiseResults,
   noiseBag: Object.freeze([
-    ...repeat('two-clanrats', 8),
-    ...repeat('three-clanrats', 4),
-    ...repeat('gutter-runner', 2),
-    ...repeat('rat-ogor', 1),
-    ...repeat('nothing', 5),
+    ...repeat<NoiseResultId>('three-clanrats', 1),
+    ...repeat<NoiseResultId>('two-clanrats', 5),
+    ...repeat<NoiseResultId>('nothing', 2),
   ]),
 });

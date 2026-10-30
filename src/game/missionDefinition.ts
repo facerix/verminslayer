@@ -20,6 +20,8 @@ export interface MissionDefinition {
   readonly roundLimit: number;
   readonly firstPhase: 'hero';
   readonly allowedHeroes: readonly HeroId[];
+  /** When set, setup uses this exact roster rather than offering hero selection. */
+  readonly fixedHeroes?: readonly HeroId[];
   readonly skavenTypes: readonly SkavenId[];
   readonly initialNoiseCount: number;
   readonly noisePerTurn: number;

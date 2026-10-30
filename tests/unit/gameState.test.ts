@@ -12,7 +12,7 @@ import {
 } from '../../src/game/gameState.ts';
 import type { GameCommand, GameState, RandomSource } from '../../src/game/gameState.ts';
 import { RulesError } from '../../src/game/rulesError.ts';
-import { THE_NEST } from '../../src/game/missions/theNest.ts';
+import { THE_UNDERBURROW } from '../../src/game/missions/theUnderburrow.ts';
 
 const randomSource: RandomSource = Object.freeze({
   next: () => 0.5,
@@ -20,14 +20,14 @@ const randomSource: RandomSource = Object.freeze({
 
 const configure = (heroIds: readonly HeroId[] = ['gotrek', 'felix']) =>
   resolveCommand(
-    createInitialGameState(THE_NEST),
+    createInitialGameState(THE_UNDERBURROW),
     { type: 'configure-game', mode: 'solo', heroIds },
     randomSource
   ).state;
 
 const deploy = (mode: 'solo' | 'two-player' = 'solo') => {
   const configured = resolveCommand(
-    createInitialGameState(THE_NEST),
+    createInitialGameState(THE_UNDERBURROW),
     { type: 'configure-game', mode, heroIds: ['gotrek'] },
     randomSource
   ).state;
@@ -45,7 +45,7 @@ const deploy = (mode: 'solo' | 'two-player' = 'solo') => {
 
 const beginHeroTurn = (heroIds: readonly HeroId[] = ['gotrek']) => {
   let state = resolveCommand(
-    createInitialGameState(THE_NEST),
+    createInitialGameState(THE_UNDERBURROW),
     { type: 'configure-game', mode: 'solo', heroIds },
     randomSource
   ).state;
@@ -68,7 +68,7 @@ const beginHeroTurn = (heroIds: readonly HeroId[] = ['gotrek']) => {
       randomSource
     ).state;
   }
-  for (const spawn of THE_NEST.board.spawns) {
+  for (const spawn of THE_UNDERBURROW.board.spawns) {
     state = resolveCommand(state, { type: 'draw-initial-noise' }, { next: () => 0 }).state;
     state = resolveCommand(
       state,
@@ -80,7 +80,7 @@ const beginHeroTurn = (heroIds: readonly HeroId[] = ['gotrek']) => {
 };
 
 test('initial setup defaults to Gotrek and Felix without starting the game', () => {
-  const state = createInitialGameState(THE_NEST);
+  const state = createInitialGameState(THE_UNDERBURROW);
 
   assert.equal(state.setupStep, 'select-roster');
   assert.equal(state.mode, null);
@@ -99,7 +99,7 @@ test('configuration accepts solo or two-player rosters of 1 through 5 unique her
         rosterSize
       ) as HeroId[];
       const result = resolveCommand(
-        createInitialGameState(THE_NEST),
+        createInitialGameState(THE_UNDERBURROW),
         { type: 'configure-game', mode, heroIds },
         randomSource
       );
@@ -120,7 +120,7 @@ test('configuration accepts solo or two-player rosters of 1 through 5 unique her
 });
 
 test('configuration rejects empty, oversized, duplicate, and unknown hero rosters', () => {
-  const state = createInitialGameState(THE_NEST);
+  const state = createInitialGameState(THE_UNDERBURROW);
   const invalidRosters = [
     [],
     ['gotrek', 'felix', 'snorri', 'ulrika', 'maximilian', 'malakai'],
@@ -145,7 +145,7 @@ test('configuration rejects an invalid runtime mode', () => {
   assert.throws(
     () =>
       resolveCommand(
-        createInitialGameState(THE_NEST),
+        createInitialGameState(THE_UNDERBURROW),
         { type: 'configure-game', mode: 'network', heroIds: ['gotrek'] } as unknown as GameCommand,
         randomSource
       ),
@@ -157,7 +157,7 @@ test('unknown runtime commands are rejected explicitly', () => {
   assert.throws(
     () =>
       resolveCommand(
-        createInitialGameState(THE_NEST),
+        createInitialGameState(THE_UNDERBURROW),
         { type: 'teleport-everyone' } as unknown as GameCommand,
         randomSource
       ),
@@ -166,7 +166,7 @@ test('unknown runtime commands are rejected explicitly', () => {
 });
 
 test('deployment positions include the marker and passable adjacent squares only', () => {
-  const legal = getLegalDeploymentPositions(configure(), THE_NEST);
+  const legal = getLegalDeploymentPositions(configure(), THE_UNDERBURROW);
 
   assert.equal(legal.length, 8);
   assert.ok(legal.some(position => position.row === 16 && position.column === 3));
@@ -369,7 +369,7 @@ test('initial noise placement accepts only an empty Skaven spawn', () => {
 
   const placed = resolveCommand(
     drawn,
-    { type: 'place-initial-noise', position: THE_NEST.board.spawns[0]! },
+    { type: 'place-initial-noise', position: THE_UNDERBURROW.board.spawns[0]! },
     randomSource
   ).state;
   const drawnAgain = resolveCommand(
@@ -381,7 +381,7 @@ test('initial noise placement accepts only an empty Skaven spawn', () => {
     () =>
       resolveCommand(
         drawnAgain,
-        { type: 'place-initial-noise', position: THE_NEST.board.spawns[0]! },
+        { type: 'place-initial-noise', position: THE_UNDERBURROW.board.spawns[0]! },
         randomSource
       ),
     (error: unknown) => error instanceof RulesError && error.code === 'NOISE_SPAWN_OCCUPIED'
@@ -391,7 +391,7 @@ test('initial noise placement accepts only an empty Skaven spawn', () => {
 test('three resolved setup draws begin Hero Turn 1 with 2 Command', () => {
   let state = deploy('two-player');
 
-  for (const spawn of THE_NEST.board.spawns) {
+  for (const spawn of THE_UNDERBURROW.board.spawns) {
     state = resolveCommand(state, { type: 'draw-initial-noise' }, { next: () => 0 }).state;
     state = resolveCommand(
       state,
@@ -414,7 +414,7 @@ test('nothing remains concealed as an ordinary face-down token until revealed', 
     { type: 'draw-initial-noise' },
     { next: () => 0.999_999 }
   ).state;
-  const spawn = THE_NEST.board.spawns[0]!;
+  const spawn = THE_UNDERBURROW.board.spawns[0]!;
   const placed = resolveCommand(
     drawn,
     { type: 'place-initial-noise', position: spawn },
@@ -426,7 +426,7 @@ test('nothing remains concealed as an ordinary face-down token until revealed', 
   assert.equal(placed.initialNoiseDrawsResolved, 1);
   assert.ok(!JSON.stringify(projectHeroView(placed)).includes('nothing'));
   assert.ok(
-    !getLegalNoiseSpawnPositions(placed, THE_NEST).some(
+    !getLegalNoiseSpawnPositions(placed, THE_UNDERBURROW).some(
       position => position.row === spawn.row && position.column === spawn.column
     )
   );
@@ -438,7 +438,7 @@ test('a draw is consumed when every spawn is occupied', () => {
     ...base,
     initialNoiseDrawsResolved: 2,
     concealedNoise: Object.freeze(
-      THE_NEST.board.spawns.map((position, index) =>
+      THE_UNDERBURROW.board.spawns.map((position, index) =>
         Object.freeze({ id: `noise-${index + 1}`, resultId: 'two-clanrats' as const, position })
       )
     ),
@@ -457,7 +457,7 @@ test('a draw is consumed when every spawn is occupied', () => {
 
 test('noise placed in hero line of sight reveals immediately', () => {
   const base = deploy('two-player');
-  const spawn = THE_NEST.board.spawns[0]!;
+  const spawn = THE_UNDERBURROW.board.spawns[0]!;
   const exposed: GameState = {
     ...base,
     heroes: Object.freeze([
@@ -491,7 +491,7 @@ test('noise commands reject invalid sequencing transactionally', () => {
     () =>
       resolveCommand(
         state,
-        { type: 'place-initial-noise', position: THE_NEST.board.spawns[0]! },
+        { type: 'place-initial-noise', position: THE_UNDERBURROW.board.spawns[0]! },
         randomSource
       ),
     (error: unknown) => error instanceof RulesError && error.code === 'NO_NOISE_DRAWN'
@@ -507,7 +507,7 @@ test('noise commands reject invalid sequencing transactionally', () => {
 
 test('noise placement treats a hero-occupied spawn as unavailable', () => {
   const base = deploy('two-player');
-  const spawn = THE_NEST.board.spawns[0]!;
+  const spawn = THE_UNDERBURROW.board.spawns[0]!;
   const occupied: GameState = {
     ...base,
     heroes: Object.freeze([
@@ -516,7 +516,7 @@ test('noise placement treats a hero-occupied spawn as unavailable', () => {
   };
 
   assert.ok(
-    !getLegalNoiseSpawnPositions(occupied, THE_NEST).some(
+    !getLegalNoiseSpawnPositions(occupied, THE_UNDERBURROW).some(
       position => Object.is(position.row, spawn.row) && Object.is(position.column, spawn.column)
     )
   );

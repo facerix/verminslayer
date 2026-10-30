@@ -1,5 +1,5 @@
 // Service Worker for Verminslayer - Development Version
-const VERSION = '0.1.10-dev';
+const VERSION = '0.1.11-dev';
 importScripts(`/sw-resources.js?v=${VERSION}`);
 importScripts(`/sw-core.js?v=${VERSION}`);
 

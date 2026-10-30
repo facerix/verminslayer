@@ -10,7 +10,7 @@ import {
 } from '../../src/game/gameState.ts';
 import type { GameState, RandomSource } from '../../src/game/gameState.ts';
 import type { HeroId, SkavenId } from '../../src/game/entities.ts';
-import { THE_NEST } from '../../src/game/missions/theNest.ts';
+import { THE_UNDERBURROW } from '../../src/game/missions/theUnderburrow.ts';
 import { RulesError } from '../../src/game/rulesError.ts';
 
 const rolls = (...values: number[]): RandomSource => {
@@ -18,7 +18,7 @@ const rolls = (...values: number[]): RandomSource => {
   return { next: () => values[index++] ?? 0 };
 };
 const arena = (heroId: HeroId, enemy: SkavenId = 'clanrat'): GameState => ({
-  ...createInitialGameState(THE_NEST),
+  ...createInitialGameState(THE_UNDERBURROW),
   mode: 'two-player',
   setupStep: 'complete',
   phase: 'hero',
@@ -64,7 +64,7 @@ test('Slayer Fury survives a save and grants exactly one free follow-up', () => 
     { type: 'fight-skaven', heroId: 'gotrek', skavenId: 'enemy' },
     rolls(0.99, 0, 0, 0)
   ).state;
-  const restored = restoreGameState(JSON.parse(JSON.stringify(first)), THE_NEST);
+  const restored = restoreGameState(JSON.parse(JSON.stringify(first)), THE_UNDERBURROW);
   assert.equal(restored.pendingAbility?.type, 'slayers-fury');
   const second = resolveCommand(
     restored,
@@ -148,7 +148,7 @@ test('an adjacent enemy blocks every ranged target, including a more distant one
         { ...base.skaven[0]!, id: 'distant', position: { row: 16, column: 5 } },
       ],
     };
-    assert.deepEqual(getLegalRangedTargetIds(state, THE_NEST), []);
+    assert.deepEqual(getLegalRangedTargetIds(state, THE_UNDERBURROW), []);
     assert.throws(
       () =>
         resolveCommand(
@@ -269,13 +269,13 @@ test('Smash reveals Noise before the Rat Ogor continues its saved Movement', () 
   assert.equal(interrupted.revealedNoise.length, 1);
   assert.deepEqual(interrupted.pendingSkavenMovement?.remainingPath, [{ row: 14, column: 7 }]);
   assert.equal(
-    restoreGameState(JSON.parse(JSON.stringify(interrupted)), THE_NEST).revealedNoise.length,
+    restoreGameState(JSON.parse(JSON.stringify(interrupted)), THE_UNDERBURROW).revealedNoise.length,
     1
   );
   let placed = interrupted;
   while (placed.revealedNoise[0]) {
     const noiseId = placed.revealedNoise[0].id;
-    const position = getLegalSkavenPlacementPositions(placed, THE_NEST, noiseId)[0]!;
+    const position = getLegalSkavenPlacementPositions(placed, THE_UNDERBURROW, noiseId)[0]!;
     placed = resolveCommand(
       placed,
       { type: 'place-revealed-skaven', noiseId, position, facing: 'east' },
@@ -326,7 +326,7 @@ test('Hunter’s Step is free, optional, and persists through reload', () => {
     { type: 'ranged-attack', heroId: 'ulrika', skavenId: 'enemy' },
     rolls(0.99, 0, 0)
   ).state;
-  const restored = restoreGameState(JSON.parse(JSON.stringify(shot)), THE_NEST);
+  const restored = restoreGameState(JSON.parse(JSON.stringify(shot)), THE_UNDERBURROW);
   const moved = resolveCommand(
     restored,
     { type: 'use-hunters-step', position: { row: 17, column: 3 } },
@@ -399,7 +399,7 @@ test('a Repeater shot pauses for a saved Rememberer reroll and then resumes', ()
     rolls(0, 0.99)
   ).state;
   assert.equal(shot.pendingCombat?.stage, 'rerolls');
-  const restored = restoreGameState(JSON.parse(JSON.stringify(shot)), THE_NEST);
+  const restored = restoreGameState(JSON.parse(JSON.stringify(shot)), THE_UNDERBURROW);
   const accepted = resolveCommand(restored, { type: 'accept-fight-rolls' }, rolls(0)).state;
   assert.equal(accepted.pendingCombat, null);
   assert.equal(accepted.pendingAbility?.type, 'repeater');
@@ -420,7 +420,7 @@ test('an adjacent enemy blocks a pending Repeater shot', () => {
       { ...base.skaven[0]!, id: 'distant', position: { row: 16, column: 5 } },
     ],
   };
-  assert.deepEqual(getLegalAbilityFightTargetIds(state, THE_NEST), []);
+  assert.deepEqual(getLegalAbilityFightTargetIds(state, THE_UNDERBURROW), []);
   assert.throws(
     () => resolveCommand(state, { type: 'repeater-attack', skavenId: 'distant' }, rolls(0.99, 0)),
     RulesError

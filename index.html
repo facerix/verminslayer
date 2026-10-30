@@ -36,11 +36,20 @@
       </a>
       <button id="quit-game" type="button" hidden>Quit game</button>
     </header>
-    <main class="game-shell">
+    <main id="title-screen" class="title-screen">
+      <div class="title-card">
+        <p class="eyebrow">Verminslayer</p>
+        <h2>Descend into the dark.</h2>
+        <p>A cooperative dungeon crawl against the Skaven horde.</p>
+        <button id="select-mission" type="button">Select your mission</button>
+        <div id="mission-list" class="mission-list" hidden></div>
+      </div>
+    </main>
+    <main id="game-shell" class="game-shell" hidden>
       <section class="board-panel" aria-labelledby="mission-title">
         <div class="mission-heading">
           <p class="eyebrow">Mission</p>
-          <h2 id="mission-title">The Nest</h2>
+          <h2 id="mission-title"></h2>
         </div>
         <toast-message id="event-highlight"></toast-message>
         <div class="board-stage"><game-board></game-board></div>

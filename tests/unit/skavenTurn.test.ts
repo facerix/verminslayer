@@ -13,7 +13,7 @@ import {
   resolveCommand,
 } from '../../src/game/gameState.ts';
 import type { GameState, RandomSource } from '../../src/game/gameState.ts';
-import { THE_NEST } from '../../src/game/missions/theNest.ts';
+import { THE_UNDERBURROW } from '../../src/game/missions/theUnderburrow.ts';
 import { RulesError } from '../../src/game/rulesError.ts';
 
 const fixedRolls = (...values: readonly number[]): RandomSource => {
@@ -23,7 +23,7 @@ const fixedRolls = (...values: readonly number[]): RandomSource => {
 
 const skavenTurn = (definitionId: 'clanrat' | 'gutter-runner' | 'rat-ogor' = 'clanrat') => {
   let state = resolveCommand(
-    createInitialGameState(THE_NEST),
+    createInitialGameState(THE_UNDERBURROW),
     { type: 'configure-game', mode: 'two-player', heroIds: ['gotrek'] },
     fixedRolls(0)
   ).state;
@@ -58,7 +58,7 @@ const skavenTurn = (definitionId: 'clanrat' | 'gutter-runner' | 'rat-ogor' = 'cl
 
 test('noise reveals from adjacency even when line of sight is blocked', () => {
   let state = resolveCommand(
-    createInitialGameState(THE_NEST),
+    createInitialGameState(THE_UNDERBURROW),
     { type: 'configure-game', mode: 'two-player', heroIds: ['gotrek'] },
     fixedRolls(0)
   ).state;
@@ -108,7 +108,7 @@ test('the Skaven turn snapshots models that may activate this turn', () => {
 
 test('Skaven approach paths use board distance to the nearest reachable attack square', () => {
   let state = skavenTurn();
-  assert.equal(getSkavenDistanceToNearestReachableHero(state, THE_NEST, 'skaven-1'), 2);
+  assert.equal(getSkavenDistanceToNearestReachableHero(state, THE_UNDERBURROW, 'skaven-1'), 2);
 
   state = resolveCommand(
     state,
@@ -116,7 +116,7 @@ test('Skaven approach paths use board distance to the nearest reachable attack s
     fixedRolls(0)
   ).state;
 
-  assert.deepEqual(getSkavenApproachPaths(state, THE_NEST, 'skaven-1'), [
+  assert.deepEqual(getSkavenApproachPaths(state, THE_UNDERBURROW, 'skaven-1'), [
     {
       destination: { row: 4, column: 3 },
       steps: [
@@ -137,7 +137,7 @@ test('a revealed Skaven takes one Movement, may change facing, and cannot split 
 
   assert.equal(state.skavenMovementRemaining, 4);
   assert.ok(
-    getLegalSkavenMovePaths(state, THE_NEST).some(
+    getLegalSkavenMovePaths(state, THE_UNDERBURROW).some(
       path => path.destination.row === 4 && path.destination.column === 3
     )
   );
@@ -158,7 +158,7 @@ test('a revealed Skaven takes one Movement, may change facing, and cannot split 
   assert.deepEqual(state.skaven[0]?.position, { row: 4, column: 3 });
   assert.equal(state.skaven[0]?.facing, 'south');
   assert.equal(state.skavenMovementRemaining, 0);
-  assert.deepEqual(getLegalSkavenMovePaths(state, THE_NEST), []);
+  assert.deepEqual(getLegalSkavenMovePaths(state, THE_UNDERBURROW), []);
   assert.throws(
     () =>
       resolveCommand(
@@ -293,7 +293,7 @@ test('a Clanrat may spend its Action opening or closing an adjacent door', () =>
   ).state;
   state = resolveCommand(state, { type: 'skip-react' }, fixedRolls(0)).state;
 
-  assert.deepEqual(getLegalSkavenDoorInteractions(state, THE_NEST), [{ row: 6, column: 4 }]);
+  assert.deepEqual(getLegalSkavenDoorInteractions(state, THE_UNDERBURROW), [{ row: 6, column: 4 }]);
   const result = resolveCommand(
     state,
     { type: 'interact-door-skaven', skavenId: 'skaven-1', position: { row: 6, column: 4 } },
@@ -327,7 +327,7 @@ test('only a Clanrat may take the Door action', () => {
   ).state;
   state = resolveCommand(state, { type: 'skip-react' }, fixedRolls(0)).state;
 
-  assert.deepEqual(getLegalSkavenDoorInteractions(state, THE_NEST), []);
+  assert.deepEqual(getLegalSkavenDoorInteractions(state, THE_UNDERBURROW), []);
   assert.throws(
     () =>
       resolveCommand(
@@ -502,7 +502,7 @@ test('Noise follows a shortest route, reveals, and grants its group Actions with
     { type: 'start-noise-activation', noiseId: 'noise-2' },
     fixedRolls(0)
   ).state;
-  const path = getLegalNoiseMovePaths(state, THE_NEST)[0]!;
+  const path = getLegalNoiseMovePaths(state, THE_UNDERBURROW)[0]!;
   assert.ok(path.steps.length > 0 && path.steps.length <= 5);
   state = resolveCommand(
     state,
@@ -519,7 +519,7 @@ test('Noise follows a shortest route, reveals, and grants its group Actions with
       {
         type: 'place-revealed-skaven',
         noiseId: noise.id,
-        position: getLegalSkavenPlacementPositions(state, THE_NEST, noise.id)[0]!,
+        position: getLegalSkavenPlacementPositions(state, THE_UNDERBURROW, noise.id)[0]!,
         facing: 'south',
       },
       fixedRolls(0)
@@ -536,7 +536,7 @@ test('Noise follows a shortest route, reveals, and grants its group Actions with
     fixedRolls(0)
   ).state;
   assert.equal(state.skavenMovementRemaining, 0);
-  assert.deepEqual(getLegalSkavenMovePaths(state, THE_NEST), []);
+  assert.deepEqual(getLegalSkavenMovePaths(state, THE_UNDERBURROW), []);
 });
 
 test('Noise advances toward a closed door when no hero is currently reachable', () => {
@@ -572,7 +572,7 @@ test('Noise advances toward a closed door when no hero is currently reachable', 
     fixedRolls(0)
   ).state;
 
-  const paths = getLegalNoiseMovePaths(state, THE_NEST);
+  const paths = getLegalNoiseMovePaths(state, THE_UNDERBURROW);
 
   assert.equal(
     paths.every(path => path.steps.length > 0),
@@ -603,7 +603,7 @@ test('two private reinforcements complete the round and reset Command to 2', () 
     remainingNoiseBag: Object.freeze(['nothing' as const, 'nothing' as const]),
     command: 0,
   };
-  const spawns = THE_NEST.board.spawns;
+  const spawns = THE_UNDERBURROW.board.spawns;
   for (let index = 0; index < 2; index++) {
     state = resolveCommand(state, { type: 'draw-reinforcement-noise' }, fixedRolls(0)).state;
     assert.equal(state.pendingNoise?.resultId, 'nothing');
@@ -650,7 +650,7 @@ for (const resultId of ['two-clanrats', 'three-clanrats'] as const) {
       fixedRolls(0)
     ).state;
 
-    assert.deepEqual(getLegalSkavenPlacementPositions(state, THE_NEST, noiseId), [
+    assert.deepEqual(getLegalSkavenPlacementPositions(state, THE_UNDERBURROW, noiseId), [
       { row: 9, column: 1 },
       { row: 11, column: 1 },
     ]);
@@ -664,7 +664,7 @@ for (const resultId of ['two-clanrats', 'three-clanrats'] as const) {
       (error: unknown) => error instanceof RulesError && error.code === 'INVALID_SKAVEN_PLACEMENT'
     );
     while (state.revealedNoise.length > 0) {
-      const position = getLegalSkavenPlacementPositions(state, THE_NEST, noiseId)[0];
+      const position = getLegalSkavenPlacementPositions(state, THE_UNDERBURROW, noiseId)[0];
       assert.ok(position, 'every remaining Clanrat must have an empty spill destination');
       state = resolveCommand(
         state,
@@ -673,7 +673,7 @@ for (const resultId of ['two-clanrats', 'three-clanrats'] as const) {
       ).state;
     }
 
-    assert.equal(state.skaven.length, THE_NEST.noiseResults[resultId].models.length);
+    assert.equal(state.skaven.length, THE_UNDERBURROW.noiseResults[resultId].models.length);
     assert.equal(
       new Set(state.skaven.map(model => JSON.stringify(model.position))).size,
       state.skaven.length
@@ -712,7 +712,7 @@ test('an immediately revealed reinforcement is placed but receives no Action thi
     {
       type: 'place-revealed-skaven',
       noiseId: noise.id,
-      position: getLegalSkavenPlacementPositions(state, THE_NEST, noise.id)[0]!,
+      position: getLegalSkavenPlacementPositions(state, THE_UNDERBURROW, noise.id)[0]!,
       facing: 'north',
     },
     fixedRolls(0)

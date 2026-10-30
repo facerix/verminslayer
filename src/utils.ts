@@ -142,3 +142,6 @@ export const isDevelopmentMode = (): boolean => {
     return false;
   }
 };
+
+export const repeat = <T>(id: T, count: number): readonly T[] =>
+  Object.freeze(Array<T>(count).fill(id));

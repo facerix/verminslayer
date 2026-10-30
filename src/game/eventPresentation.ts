@@ -30,14 +30,14 @@ export const latestImportantEvent = (
         title: event.result.winner === 'heroes' ? 'Hero victory' : 'Skaven victory',
         detail:
           event.result.reason === 'exit'
-            ? 'A survivor escaped through the Watch Post.'
+            ? 'A survivor escaped through the exit.'
             : event.result.reason === 'timeout'
-              ? 'Hero Turn 8 ended before the heroes escaped.'
+              ? 'The final Hero Turn ended before the heroes escaped.'
               : 'All selected heroes were slain.',
       };
     }
     if (event.type === 'exit-opened')
-      return { title: 'Watch Post open', detail: 'All three Nests are destroyed.' };
+      return { title: 'Exit open', detail: 'All Nests are destroyed.' };
     if (event.type === 'noise-revealed') {
       return {
         title: `Noise revealed: ${NOISE_NAMES[event.resultId]}`,

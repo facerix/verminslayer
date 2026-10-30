@@ -38,6 +38,70 @@ body.u-fill-height {
   overflow: hidden;
 }
 
+[hidden] {
+  display: none !important;
+}
+
+.title-screen {
+  display: grid;
+  place-items: center;
+  padding: 2rem;
+}
+
+.title-card {
+  width: min(100%, 38rem);
+  padding: clamp(1.5rem, 5vw, 3rem);
+  border: 1px solid #684b39;
+  border-radius: 0.6rem;
+  background: var(--panel-color);
+  box-shadow: 0 1rem 3rem rgb(0 0 0 / 30%);
+}
+
+.title-card h2 {
+  margin: 0 0 0.75rem;
+  font-size: clamp(2rem, 5vw, 3rem);
+}
+
+.title-card p {
+  color: var(--muted-color);
+}
+
+.title-card button,
+.mission-choice {
+  padding: 0.85rem 1rem;
+  border: 1px solid var(--accent-color);
+  border-radius: 0.35rem;
+  background: #231d19;
+  color: #e6ddce;
+  font: inherit;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.title-card button:hover,
+.title-card button:focus-visible {
+  outline: 2px solid var(--accent-color);
+  outline-offset: 2px;
+}
+
+.mission-list {
+  display: grid;
+  gap: 0.7rem;
+  margin-top: 1.5rem;
+}
+
+.mission-choice {
+  display: grid;
+  gap: 0.3rem;
+  width: 100%;
+  text-align: left;
+}
+
+.mission-choice small {
+  color: var(--muted-color);
+  font-weight: 400;
+}
+
 footer,
 header {
   flex: 0;

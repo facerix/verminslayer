@@ -1,9 +1,11 @@
 import type { MissionDefinition } from '/src/game/missionDefinition.js';
 import { RulesError } from '/src/game/rulesError.js';
 import { THE_NEST } from '/src/game/missions/theNest.js';
+import { THE_UNDERBURROW } from '/src/game/missions/theUnderburrow.js';
 
-const MISSIONS: Readonly<Record<string, MissionDefinition>> = Object.freeze({
+export const MISSIONS: Readonly<Record<string, MissionDefinition>> = Object.freeze({
   [THE_NEST.id]: THE_NEST,
+  [THE_UNDERBURROW.id]: THE_UNDERBURROW,
 });
 
 export const getMissionDefinition = (missionId: string): MissionDefinition => {

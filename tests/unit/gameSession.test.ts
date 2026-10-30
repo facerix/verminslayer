@@ -3,12 +3,12 @@ import { test } from 'node:test';
 
 import { GameSession } from '../../src/game/gameSession.ts';
 import type { GameState, RandomSource } from '../../src/game/gameState.ts';
-import { THE_NEST } from '../../src/game/missions/theNest.ts';
+import { THE_UNDERBURROW } from '../../src/game/missions/theUnderburrow.ts';
 
 const randomSource: RandomSource = Object.freeze({ next: () => 0.5 });
 
 test('a game session owns engine state and exposes the hero-safe projection', () => {
-  const session = new GameSession(THE_NEST, randomSource);
+  const session = new GameSession(THE_UNDERBURROW, randomSource);
 
   assert.equal(session.heroView.setupStep, 'select-roster');
   assert.deepEqual(session.heroView.selectedHeroIds, ['gotrek', 'felix']);
@@ -30,7 +30,7 @@ test('a game session owns engine state and exposes the hero-safe projection', ()
 
 test('a game session can restore a saved state and reports each successful transaction', () => {
   const savedStates: GameState[] = [];
-  const original = new GameSession(THE_NEST, randomSource, undefined, state => {
+  const original = new GameSession(THE_UNDERBURROW, randomSource, undefined, state => {
     savedStates.push(state);
   });
 
@@ -42,7 +42,7 @@ test('a game session can restore a saved state and reports each successful trans
 
   assert.equal(savedStates.length, 1);
   const savedState = structuredClone(savedStates[0]);
-  const restored = new GameSession(THE_NEST, randomSource, savedState);
+  const restored = new GameSession(THE_UNDERBURROW, randomSource, savedState);
 
   assert.equal(restored.heroView.setupStep, 'deploy-heroes');
   assert.equal(restored.heroView.mode, 'two-player');

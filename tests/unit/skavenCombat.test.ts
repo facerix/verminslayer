@@ -8,7 +8,7 @@ import {
   resolveCommand,
 } from '../../src/game/gameState.ts';
 import type { GameState, RandomSource } from '../../src/game/gameState.ts';
-import { THE_NEST } from '../../src/game/missions/theNest.ts';
+import { THE_UNDERBURROW } from '../../src/game/missions/theUnderburrow.ts';
 import { RulesError } from '../../src/game/rulesError.ts';
 
 const fixedRolls = (...values: readonly number[]): RandomSource => {
@@ -22,7 +22,7 @@ const heroTurnWithRevealedGroup = (
   resultId: 'two-clanrats' | 'three-clanrats' | 'gutter-runner' | 'rat-ogor' = 'two-clanrats'
 ): GameState => {
   let state = resolveCommand(
-    createInitialGameState(THE_NEST),
+    createInitialGameState(THE_UNDERBURROW),
     { type: 'configure-game', mode: 'two-player', heroIds: ['gotrek'] },
     fixedRolls(0)
   ).state;
@@ -53,7 +53,7 @@ const heroTurnWithRevealedGroup = (
         id: 'noise-1',
         resultId,
         position: Object.freeze({ row: 15, column: 4 }),
-        remainingModels: Object.freeze([...THE_NEST.noiseResults[resultId].models]),
+        remainingModels: Object.freeze([...THE_UNDERBURROW.noiseResults[resultId].models]),
       }),
     ]),
   };
@@ -62,7 +62,7 @@ const heroTurnWithRevealedGroup = (
 test('a revealed group places stable Skaven models on the token then nearest squares', () => {
   let state = heroTurnWithRevealedGroup();
 
-  assert.deepEqual(getLegalSkavenPlacementPositions(state, THE_NEST, 'noise-1'), [
+  assert.deepEqual(getLegalSkavenPlacementPositions(state, THE_UNDERBURROW, 'noise-1'), [
     { row: 15, column: 4 },
   ]);
   state = resolveCommand(
@@ -84,7 +84,7 @@ test('a revealed group places stable Skaven models on the token then nearest squ
     position: { row: 15, column: 4 },
     facing: 'south',
   });
-  assert.deepEqual(getLegalSkavenPlacementPositions(state, THE_NEST, 'noise-1'), [
+  assert.deepEqual(getLegalSkavenPlacementPositions(state, THE_UNDERBURROW, 'noise-1'), [
     { row: 14, column: 4 },
     { row: 15, column: 5 },
     { row: 16, column: 4 },
@@ -135,7 +135,7 @@ test('crowded group placement skips occupied squares but never skips an open nea
     fixedRolls(0)
   ).state;
 
-  assert.deepEqual(getLegalSkavenPlacementPositions(state, THE_NEST, 'noise-1'), [
+  assert.deepEqual(getLegalSkavenPlacementPositions(state, THE_UNDERBURROW, 'noise-1'), [
     { row: 16, column: 4 },
     { row: 15, column: 3 },
   ]);
@@ -164,7 +164,7 @@ test('crowded group placement skips occupied squares but never skips an open nea
     fixedRolls(0)
   ).state;
   assert.ok(
-    getLegalSkavenPlacementPositions(state, THE_NEST, 'noise-1').some(
+    getLegalSkavenPlacementPositions(state, THE_UNDERBURROW, 'noise-1').some(
       position => position.row === 16 && position.column === 4
     )
   );
@@ -198,7 +198,7 @@ test('a three-model group can expand through its own models from a dead-end toke
     ).state;
   }
 
-  assert.deepEqual(getLegalSkavenPlacementPositions(state, THE_NEST, 'noise-1'), [
+  assert.deepEqual(getLegalSkavenPlacementPositions(state, THE_UNDERBURROW, 'noise-1'), [
     { row: 1, column: 11 },
     { row: 2, column: 10 },
     { row: 1, column: 9 },
@@ -255,7 +255,7 @@ test('a revealed group spills through unrelated Skaven when leaving a crowded sp
     fixedRolls(0)
   ).state;
 
-  assert.deepEqual(getLegalSkavenPlacementPositions(state, THE_NEST, 'noise-1'), [
+  assert.deepEqual(getLegalSkavenPlacementPositions(state, THE_UNDERBURROW, 'noise-1'), [
     { row: 9, column: 1 },
   ]);
 
@@ -270,7 +270,7 @@ test('a revealed group spills through unrelated Skaven when leaving a crowded sp
     fixedRolls(0)
   ).state;
 
-  assert.deepEqual(getLegalSkavenPlacementPositions(state, THE_NEST, 'noise-1'), [
+  assert.deepEqual(getLegalSkavenPlacementPositions(state, THE_UNDERBURROW, 'noise-1'), [
     { row: 8, column: 1 },
   ]);
 });
@@ -295,7 +295,7 @@ test('a stranded group away from an entry cannot spill through heroes', () => {
     },
     fixedRolls(0)
   ).state;
-  assert.deepEqual(getLegalSkavenPlacementPositions(state, THE_NEST, 'noise-1'), []);
+  assert.deepEqual(getLegalSkavenPlacementPositions(state, THE_UNDERBURROW, 'noise-1'), []);
 });
 
 test('entry spill keeps normal reachable squares before searching through heroes', () => {
@@ -315,7 +315,7 @@ test('entry spill keeps normal reachable squares before searching through heroes
       fixedRolls(0)
     ).state;
   }
-  assert.deepEqual(getLegalSkavenPlacementPositions(state, THE_NEST, 'noise-1'), [
+  assert.deepEqual(getLegalSkavenPlacementPositions(state, THE_UNDERBURROW, 'noise-1'), [
     { row: 11, column: 1 },
   ]);
 });
@@ -341,7 +341,7 @@ test('a blocked entry cannot spill through concealed Noise', () => {
     },
     fixedRolls(0)
   ).state;
-  assert.deepEqual(getLegalSkavenPlacementPositions(state, THE_NEST, 'noise-1'), []);
+  assert.deepEqual(getLegalSkavenPlacementPositions(state, THE_UNDERBURROW, 'noise-1'), []);
 });
 
 test('revealed groups interrupt Hero actions until every model is placed', () => {

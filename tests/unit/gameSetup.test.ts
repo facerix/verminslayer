@@ -2,7 +2,7 @@ import type {} from '../../components/ConfirmationModal.ts';
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { GameSession } from '../../src/game/gameSession.ts';
-import { THE_NEST } from '../../src/game/missions/theNest.ts';
+import { THE_UNDERBURROW } from '../../src/game/missions/theUnderburrow.ts';
 import type { CombatResult, GameEvent } from '../../src/game/gameState.ts';
 
 // Minimal DOM surface for exercising the real component without a dependency.
@@ -81,7 +81,7 @@ test('combat log renders newest first without mutating persisted chronology and 
   const setup = new GameSetup();
   const history = Object.freeze([older, newer]);
   setup.view = {
-    ...new GameSession(THE_NEST, { next: () => 0 }).heroView,
+    ...new GameSession(THE_UNDERBURROW, { next: () => 0 }).heroView,
     setupStep: 'complete',
     combatLog: history,
   };
@@ -145,7 +145,7 @@ const buttons = (element: TestElement): TestElement[] => [
 
 test('location based hero abilities offer one action button and a board selection prompt', () => {
   const setup = new GameSetup();
-  const base = new GameSession(THE_NEST, { next: () => 0 }).heroView;
+  const base = new GameSession(THE_UNDERBURROW, { next: () => 0 }).heroView;
   setup.view = {
     ...base,
     setupStep: 'complete',
@@ -182,7 +182,7 @@ test('location based hero abilities offer one action button and a board selectio
 
 test('Demolition Charge detonation is disabled while Malakai is in melee range', () => {
   const setup = new GameSetup();
-  const base = new GameSession(THE_NEST, { next: () => 0 }).heroView;
+  const base = new GameSession(THE_UNDERBURROW, { next: () => 0 }).heroView;
   const view = {
     ...base,
     setupStep: 'complete' as const,
@@ -224,7 +224,7 @@ test('Demolition Charge detonation is disabled while Malakai is in melee range',
 
 test('pending Slayer’s Fury offers one move and one attack choice for map targets', () => {
   const setup = new GameSetup();
-  const base = new GameSession(THE_NEST, { next: () => 0 }).heroView;
+  const base = new GameSession(THE_UNDERBURROW, { next: () => 0 }).heroView;
   setup.view = {
     ...base,
     setupStep: 'complete',
@@ -253,7 +253,7 @@ test('pending Slayer’s Fury offers one move and one attack choice for map targ
 });
 
 const fightView = (): import('../../src/game/gameState.ts').HeroGameView => ({
-  ...new GameSession(THE_NEST, { next: () => 0 }).heroView,
+  ...new GameSession(THE_UNDERBURROW, { next: () => 0 }).heroView,
   setupStep: 'complete',
   phase: 'skaven',
   mode: 'two-player',

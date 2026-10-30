@@ -8,7 +8,7 @@ import {
 } from '../../src/game/gameState.ts';
 import type { GameState } from '../../src/game/gameState.ts';
 import { GameSession } from '../../src/game/gameSession.ts';
-import { THE_NEST } from '../../src/game/missions/theNest.ts';
+import { THE_UNDERBURROW } from '../../src/game/missions/theUnderburrow.ts';
 import { RulesError } from '../../src/game/rulesError.ts';
 
 const random = { next: () => 0.5 };
@@ -17,7 +17,7 @@ const position = { row: 9, column: 1 };
 const heroTurn = (rosterSize = 1): GameState => {
   const ids = ['gotrek', 'felix', 'snorri', 'ulrika', 'maximilian'].slice(0, rosterSize);
   const configured = resolveCommand(
-    createInitialGameState(THE_NEST),
+    createInitialGameState(THE_UNDERBURROW),
     { type: 'configure-game', mode: 'solo', heroIds: ids as GameState['selectedHeroIds'] },
     random
   ).state;
@@ -144,7 +144,7 @@ test('exit victory commits even when its final step also reveals Noise', () => {
       { id: 'noise-test', resultId: 'two-clanrats', position: { row: 17, column: 2 } },
     ],
   };
-  const session = new GameSession(THE_NEST, random, state);
+  const session = new GameSession(THE_UNDERBURROW, random, state);
   const events = session.dispatch({
     type: 'move-hero',
     heroId: 'gotrek',

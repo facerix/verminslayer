@@ -10,7 +10,7 @@ import {
 } from '../../src/game/gameState.ts';
 import type { GameState } from '../../src/game/gameState.ts';
 import type { NoiseResultId } from '../../src/game/missionDefinition.ts';
-import { THE_NEST } from '../../src/game/missions/theNest.ts';
+import { THE_UNDERBURROW } from '../../src/game/missions/theUnderburrow.ts';
 import { GameSession } from '../../src/game/gameSession.ts';
 import { runSoloSkavenAi } from '../../src/game/skavenAi.ts';
 import { RulesError } from '../../src/game/rulesError.ts';
@@ -22,7 +22,7 @@ const noisePosition = { row: 7, column: 4 };
 
 const noiseTurn = (resultId: NoiseResultId, command = 2): GameState => {
   const base = resolveCommand(
-    createInitialGameState(THE_NEST),
+    createInitialGameState(THE_UNDERBURROW),
     {
       type: 'configure-game',
       mode: 'two-player',
@@ -65,7 +65,7 @@ const placeGroup = (initial: GameState): GameState => {
       {
         type: 'place-revealed-skaven',
         noiseId: noise.id,
-        position: getLegalSkavenPlacementPositions(state, THE_NEST, noise.id)[0]!,
+        position: getLegalSkavenPlacementPositions(state, THE_UNDERBURROW, noise.id)[0]!,
         facing: 'north',
       },
       random
@@ -83,7 +83,7 @@ for (const resultId of [
 ] as const) {
   test(`${resultId} Noise resolves a blocking door without moving`, () => {
     const state = noiseTurn(resultId);
-    assert.deepEqual(getLegalNoiseMovePaths(state, THE_NEST), [
+    assert.deepEqual(getLegalNoiseMovePaths(state, THE_UNDERBURROW), [
       { destination: noisePosition, steps: [], doorPosition },
     ]);
     const result = resolveDoor(state);
@@ -117,9 +117,9 @@ for (const resultId of [
       );
       assert.equal(result.state.revealedNoise[0]?.resultId, resultId);
       const placed = placeGroup(
-        restoreGameState(JSON.parse(JSON.stringify(result.state)), THE_NEST)
+        restoreGameState(JSON.parse(JSON.stringify(result.state)), THE_UNDERBURROW)
       );
-      assert.equal(placed.skaven.length, THE_NEST.noiseResults[resultId].models.length);
+      assert.equal(placed.skaven.length, THE_UNDERBURROW.noiseResults[resultId].models.length);
       assert.deepEqual(placed.noiseActionIds, []);
       assert.deepEqual(placed.pendingReact, { source: 'noise', sourceId: 'noise-1' });
       assert.throws(
@@ -157,7 +157,7 @@ test('Noise plans through a closed door even when an open detour exists', () => 
       status: door.position.row === 6 && door.position.column === 4 ? 'closed' : 'open',
     })),
   };
-  assert.deepEqual(getLegalNoiseMovePaths(state, THE_NEST), [
+  assert.deepEqual(getLegalNoiseMovePaths(state, THE_UNDERBURROW), [
     { destination: noisePosition, steps: [], doorPosition },
   ]);
 });
@@ -169,7 +169,7 @@ test('moving to a blocking door does not open it in the same activation', () => 
     ...base,
     concealedNoise: [{ ...base.concealedNoise[0]!, position: start }],
   };
-  const paths = getLegalNoiseMovePaths(state, THE_NEST);
+  const paths = getLegalNoiseMovePaths(state, THE_UNDERBURROW);
   assert.deepEqual(paths, [{ destination: noisePosition, steps: [noisePosition] }]);
   const result = resolveCommand(
     state,
@@ -254,7 +254,7 @@ test('public route choices do not expose the hidden Noise result', () => {
 });
 
 test('solo AI resolves the door, pauses for React, and never grants post-door Actions', () => {
-  const session = new GameSession(THE_NEST, random, {
+  const session = new GameSession(THE_UNDERBURROW, random, {
     ...noiseTurn('three-clanrats'),
     mode: 'solo',
   });
@@ -282,7 +282,7 @@ test('diagonally adjacent blocking doors remain distinct tied route choices', ()
     heroes: [{ ...base.heroes[0]!, position: { row: 9, column: 11 } }],
     concealedNoise: [{ ...base.concealedNoise[0]!, position: { row: 13, column: 5 } }],
   };
-  assert.deepEqual(getLegalNoiseMovePaths(state, THE_NEST), [
+  assert.deepEqual(getLegalNoiseMovePaths(state, THE_UNDERBURROW), [
     { destination: { row: 13, column: 5 }, steps: [], doorPosition: { row: 12, column: 5 } },
     { destination: { row: 13, column: 5 }, steps: [], doorPosition: { row: 14, column: 6 } },
   ]);
@@ -311,7 +311,7 @@ test('diagonally adjacent blocking doors remain distinct tied route choices', ()
 
 test('a Fight reaction finishes the spent Noise activation while surviving Clanrats cannot act', () => {
   const placed = placeGroup(resolveDoor(noiseTurn('two-clanrats')).state);
-  const restored = restoreGameState(JSON.parse(JSON.stringify(placed)), THE_NEST);
+  const restored = restoreGameState(JSON.parse(JSON.stringify(placed)), THE_UNDERBURROW);
   const target = projectHeroView(restored).legalReactFightOptions[0];
   assert.ok(target, 'one placed Clanrat should be within Fight range');
   const rolls = [0.99, 0.99, 0.99, 0];
@@ -401,7 +401,7 @@ const moduleFor = (session: GameSession) => {
 };
 
 test('two-player controls resolve a single blocking-door route', () => {
-  const session = new GameSession(THE_NEST, random, noiseTurn('rat-ogor'));
+  const session = new GameSession(THE_UNDERBURROW, random, noiseTurn('rat-ogor'));
   const { module, announcements } = moduleFor(session);
   assert.equal(module.handleEvent(new CustomEvent('noise-move-requested')), true);
   assert.equal(
@@ -414,7 +414,7 @@ test('two-player controls resolve a single blocking-door route', () => {
 
 test('two-player controls highlight and resolve the selected door among tied routes', () => {
   const base = noiseTurn('rat-ogor');
-  const session = new GameSession(THE_NEST, random, {
+  const session = new GameSession(THE_UNDERBURROW, random, {
     ...base,
     heroes: [{ ...base.heroes[0]!, position: { row: 9, column: 11 } }],
     concealedNoise: [{ ...base.concealedNoise[0]!, position: { row: 13, column: 5 } }],

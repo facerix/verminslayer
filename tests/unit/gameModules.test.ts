@@ -20,7 +20,7 @@ import type {
   SkavenGameView,
 } from '../../src/game/gameState.ts';
 import type { Position } from '../../src/game/map.ts';
-import { THE_NEST } from '../../src/game/missions/theNest.ts';
+import { THE_UNDERBURROW } from '../../src/game/missions/theUnderburrow.ts';
 
 const randomSource: RandomSource = Object.freeze({ next: () => 0.5 });
 
@@ -121,7 +121,7 @@ const deploySingleHero = (session: GameSession, mode: 'solo' | 'two-player') => 
 
 const completeSoloSetup = (session: GameSession) => {
   deploySingleHero(session, 'solo');
-  for (const spawn of THE_NEST.board.spawns) {
+  for (const spawn of THE_UNDERBURROW.board.spawns) {
     session.dispatch({ type: 'draw-initial-noise' });
     session.dispatch({ type: 'place-initial-noise', position: spawn });
   }
@@ -131,7 +131,7 @@ test('the setup module renders setup state and handles setup commands', () => {
   const setup = new SetupViewSpy();
   const board = new BoardViewSpy();
   const module = new SetupGameModule({
-    session: new GameSession(THE_NEST, randomSource),
+    session: new GameSession(THE_UNDERBURROW, randomSource),
     setup,
     board,
   });
@@ -160,7 +160,7 @@ test('the setup module projects deployed heroes onto the board', () => {
   const setup = new SetupViewSpy();
   const board = new BoardViewSpy();
   const module = new SetupGameModule({
-    session: new GameSession(THE_NEST, randomSource),
+    session: new GameSession(THE_UNDERBURROW, randomSource),
     setup,
     board,
   });
@@ -196,7 +196,7 @@ test('the setup module projects deployed heroes onto the board', () => {
 test('the setup module delegates board selections to setup controls', () => {
   const setup = new SetupViewSpy();
   const module = new SetupGameModule({
-    session: new GameSession(THE_NEST, randomSource),
+    session: new GameSession(THE_UNDERBURROW, randomSource),
     setup,
     board: new BoardViewSpy(),
   });
@@ -218,7 +218,7 @@ test('the setup module reports rules errors without changing its session', () =>
   const setup = new SetupViewSpy();
   const board = new BoardViewSpy();
   const module = new SetupGameModule({
-    session: new GameSession(THE_NEST, randomSource),
+    session: new GameSession(THE_UNDERBURROW, randomSource),
     setup,
     board,
   });
@@ -263,7 +263,7 @@ test('the event delegate stops at the module that handles an event and rejects g
 });
 
 test('two-player initial noise reveals one private draw and advances after each placement', () => {
-  const session = new GameSession(THE_NEST, { next: () => 0 });
+  const session = new GameSession(THE_UNDERBURROW, { next: () => 0 });
   deploySingleHero(session, 'two-player');
   const setup = new SetupViewSpy();
   const board = new BoardViewSpy();
@@ -284,7 +284,7 @@ test('two-player initial noise reveals one private draw and advances after each 
   assert.ok(!JSON.stringify(setup.view).includes('two-clanrats'));
 
   module.handleEvent(
-    new CustomEvent('board-square-selected', { detail: THE_NEST.board.spawns[0]! })
+    new CustomEvent('board-square-selected', { detail: THE_UNDERBURROW.board.spawns[0]! })
   );
   assert.equal(board.noiseTokens.length, 1);
   assert.equal(board.legalSquares.length, 2);
@@ -292,14 +292,14 @@ test('two-player initial noise reveals one private draw and advances after each 
 });
 
 test('two-player initial noise completes after three board placements', () => {
-  const session = new GameSession(THE_NEST, { next: () => 0 });
+  const session = new GameSession(THE_UNDERBURROW, { next: () => 0 });
   deploySingleHero(session, 'two-player');
   const setup = new SetupViewSpy();
   const board = new BoardViewSpy();
   const module = new InitialNoiseGameModule({ session, setup, board, randomSource });
 
   module.handleEvent(new CustomEvent('game-command', { detail: { type: 'draw-initial-noise' } }));
-  for (const spawn of THE_NEST.board.spawns) {
+  for (const spawn of THE_UNDERBURROW.board.spawns) {
     module.handleEvent(new CustomEvent('board-square-selected', { detail: spawn }));
   }
 
@@ -311,7 +311,7 @@ test('two-player initial noise completes after three board placements', () => {
 });
 
 test('solo initial noise uses ordinary commands without rendering a private identity', () => {
-  const session = new GameSession(THE_NEST, { next: () => 0 });
+  const session = new GameSession(THE_UNDERBURROW, { next: () => 0 });
   deploySingleHero(session, 'solo');
   const setup = new SetupViewSpy();
   const board = new BoardViewSpy();
@@ -331,7 +331,7 @@ test('solo initial noise uses ordinary commands without rendering a private iden
 });
 
 test('the Hero-turn module chooses a destination before committing movement and facing', () => {
-  const session = new GameSession(THE_NEST, { next: () => 0 });
+  const session = new GameSession(THE_UNDERBURROW, { next: () => 0 });
   completeSoloSetup(session);
   const setup = new SetupViewSpy();
   const board = new BoardViewSpy();
@@ -339,7 +339,7 @@ test('the Hero-turn module chooses a destination before committing movement and 
 
   module.render();
   assert.equal(setup.view.phase, 'hero');
-  assert.equal(board.doors.length, THE_NEST.board.doors.length);
+  assert.equal(board.doors.length, THE_UNDERBURROW.board.doors.length);
 
   module.handleEvent(
     new CustomEvent('game-command', {
@@ -373,7 +373,7 @@ test('the Hero-turn module chooses a destination before committing movement and 
 });
 
 test('the Hero-turn module can cancel movement before or after choosing a destination', () => {
-  const session = new GameSession(THE_NEST, { next: () => 0 });
+  const session = new GameSession(THE_UNDERBURROW, { next: () => 0 });
   completeSoloSetup(session);
   const setup = new SetupViewSpy();
   const board = new BoardViewSpy();
@@ -400,10 +400,10 @@ test('the Hero-turn module can cancel movement before or after choosing a destin
 });
 
 test('the Hero-turn module highlights and resolves a Slayer’s Fury move from the board', () => {
-  const base = new GameSession(THE_NEST, { next: () => 0 });
+  const base = new GameSession(THE_UNDERBURROW, { next: () => 0 });
   completeSoloSetup(base);
   base.dispatch({ type: 'start-hero-activation', heroId: 'gotrek' });
-  const session = new GameSession(THE_NEST, randomSource, {
+  const session = new GameSession(THE_UNDERBURROW, randomSource, {
     ...base.state,
     pendingAbility: { type: 'slayers-fury', heroId: 'gotrek' },
   });
@@ -431,7 +431,7 @@ test('the Hero-turn module highlights and resolves a Slayer’s Fury move from t
 });
 
 test('a charge follow-up can target the board between hero activations', () => {
-  const base = new GameSession(THE_NEST, { next: () => 0 });
+  const base = new GameSession(THE_UNDERBURROW, { next: () => 0 });
   base.dispatch({ type: 'configure-game', mode: 'solo', heroIds: ['malakai'] });
   base.dispatch({
     type: 'deploy-hero',
@@ -439,12 +439,12 @@ test('a charge follow-up can target the board between hero activations', () => {
     position: { row: 16, column: 3 },
     facing: 'north',
   });
-  for (const spawn of THE_NEST.board.spawns) {
+  for (const spawn of THE_UNDERBURROW.board.spawns) {
     base.dispatch({ type: 'draw-initial-noise' });
     base.dispatch({ type: 'place-initial-noise', position: spawn });
   }
   const target = { row: 15, column: 3 };
-  const session = new GameSession(THE_NEST, randomSource, {
+  const session = new GameSession(THE_UNDERBURROW, randomSource, {
     ...base.state,
     activeHeroId: null,
     skaven: [
@@ -471,7 +471,7 @@ test('a charge follow-up can target the board between hero activations', () => {
 });
 
 test('placing a Demolition Charge highlights legal features and spends the action on selection', () => {
-  const base = new GameSession(THE_NEST, { next: () => 0 });
+  const base = new GameSession(THE_UNDERBURROW, { next: () => 0 });
   base.dispatch({ type: 'configure-game', mode: 'solo', heroIds: ['malakai'] });
   base.dispatch({
     type: 'deploy-hero',
@@ -479,12 +479,12 @@ test('placing a Demolition Charge highlights legal features and spends the actio
     position: { row: 16, column: 3 },
     facing: 'north',
   });
-  for (const spawn of THE_NEST.board.spawns) {
+  for (const spawn of THE_UNDERBURROW.board.spawns) {
     base.dispatch({ type: 'draw-initial-noise' });
     base.dispatch({ type: 'place-initial-noise', position: spawn });
   }
   base.dispatch({ type: 'start-hero-activation', heroId: 'malakai' });
-  const session = new GameSession(THE_NEST, randomSource, {
+  const session = new GameSession(THE_UNDERBURROW, randomSource, {
     ...base.state,
     heroes: [{ ...base.state.heroes[0]!, position: { row: 15, column: 5 } }],
   });
@@ -507,7 +507,7 @@ test('placing a Demolition Charge highlights legal features and spends the actio
 });
 
 test('a Skaven-turn Two-Fisted follow-up still offers its board target', () => {
-  const base = new GameSession(THE_NEST, { next: () => 0 });
+  const base = new GameSession(THE_UNDERBURROW, { next: () => 0 });
   base.dispatch({ type: 'configure-game', mode: 'solo', heroIds: ['snorri'] });
   base.dispatch({
     type: 'deploy-hero',
@@ -515,12 +515,12 @@ test('a Skaven-turn Two-Fisted follow-up still offers its board target', () => {
     position: { row: 16, column: 3 },
     facing: 'north',
   });
-  for (const spawn of THE_NEST.board.spawns) {
+  for (const spawn of THE_UNDERBURROW.board.spawns) {
     base.dispatch({ type: 'draw-initial-noise' });
     base.dispatch({ type: 'place-initial-noise', position: spawn });
   }
   const target = { row: 15, column: 3 };
-  const session = new GameSession(THE_NEST, randomSource, {
+  const session = new GameSession(THE_UNDERBURROW, randomSource, {
     ...base.state,
     phase: 'skaven',
     activeHeroId: null,
@@ -547,7 +547,7 @@ test('a Skaven-turn Two-Fisted follow-up still offers its board target', () => {
 
 test('the Hero-turn module automatically resolves a revealed 3C group in solo mode', () => {
   const drawValues = [0.45, 0, 0];
-  const session = new GameSession(THE_NEST, {
+  const session = new GameSession(THE_UNDERBURROW, {
     next: () => drawValues.shift() ?? 0,
   });
   session.dispatch({ type: 'configure-game', mode: 'solo', heroIds: ['felix'] });
@@ -616,7 +616,7 @@ test('the Hero-turn module automatically resolves a revealed 3C group in solo mo
 
 test('the session automatically places consecutive revealed models with one legal square', () => {
   const drawValues = [0.45, 0, 0];
-  const session = new GameSession(THE_NEST, {
+  const session = new GameSession(THE_UNDERBURROW, {
     next: () => drawValues.shift() ?? 0,
   });
   session.dispatch({ type: 'configure-game', mode: 'two-player', heroIds: ['felix'] });
@@ -683,7 +683,7 @@ test('the session automatically places consecutive revealed models with one lega
 });
 
 test('setup and noise modules leave Hero-turn commands for the Hero-turn module', () => {
-  const session = new GameSession(THE_NEST, { next: () => 0 });
+  const session = new GameSession(THE_UNDERBURROW, { next: () => 0 });
   completeSoloSetup(session);
   const setup = new SetupViewSpy();
   const board = new BoardViewSpy();
@@ -701,7 +701,7 @@ test('setup and noise modules leave Hero-turn commands for the Hero-turn module'
 
 test('the Skaven-turn module offers a direct hold when no movement path is open', () => {
   const drawValues = [0.45, 0, 0];
-  const session = new GameSession(THE_NEST, {
+  const session = new GameSession(THE_UNDERBURROW, {
     next: () => drawValues.shift() ?? 0,
   });
   session.dispatch({ type: 'configure-game', mode: 'two-player', heroIds: ['felix'] });
@@ -825,7 +825,7 @@ test('the Skaven-turn module offers a direct hold when no movement path is open'
 });
 
 test('the Skaven-turn module renders the next Hero turn after reinforcement', () => {
-  const session = new GameSession(THE_NEST, { next: () => 0 });
+  const session = new GameSession(THE_UNDERBURROW, { next: () => 0 });
   completeSoloSetup(session);
   session.dispatch({ type: 'start-hero-activation', heroId: 'gotrek' });
   session.dispatch({ type: 'end-hero-activation', heroId: 'gotrek', confirmed: true });
@@ -848,7 +848,7 @@ test('the Skaven-turn module renders the next Hero turn after reinforcement', ()
       );
     }
   }
-  for (let draw = 0; draw < THE_NEST.noisePerTurn; draw++) {
+  for (let draw = 0; draw < THE_UNDERBURROW.noisePerTurn; draw++) {
     module.handleEvent(
       new CustomEvent('game-command', { detail: { type: 'draw-reinforcement-noise' } })
     );
@@ -867,7 +867,7 @@ test('the Skaven-turn module renders the next Hero turn after reinforcement', ()
 });
 
 test('solo mode generates legal Skaven commands until React or the next Hero turn', () => {
-  const session = new GameSession(THE_NEST, { next: () => 0 });
+  const session = new GameSession(THE_UNDERBURROW, { next: () => 0 });
   completeSoloSetup(session);
   const setup = new SetupViewSpy();
   const board = new BoardViewSpy();

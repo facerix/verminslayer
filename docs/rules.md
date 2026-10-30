@@ -312,6 +312,36 @@ reveal; its models get no further Movement or Actions that turn.
 
 ### THE NEST
 
+**Heroes**: Gotrek Gurnisson and Felix Jaeger (fixed roster)
+
+**Skaven**: Clanrats (starting noise: 1, +1 each turn)
+
+**Length**: maximum 6 rounds
+
+**First turn**: Heroes
+
+Gotrek and Felix enter a compact four-room burrow. Destroy its single Nest, then move a surviving hero through the exit. A hero adjacent to the Nest destroys it by spending 2 Actions. The exit opens when the Nest is destroyed. The Skaven win if both heroes are slain or the heroes have not escaped by the end of Hero Turn 6.
+
+The 13-column by 13-row board has two spawn points. Its Noise bag contains one result of three Clanrats, five results of two Clanrats and two Nothing results.
+
+```
+##########S##
+#.....#.....#
+#.....+.....#
+S.....#..N..#
+#.....#.....#
+#.....#.....#
+##+####+#####
+#.....#.....#
+#.....+.....#
+#..@..#.....#
+#.....#.....#
+#.....#.....#
+#########E###
+```
+
+### THE UNDERBURROW
+
 **Heroes**: 1–5 unique heroes selected from all six; Gotrek and Felix are selected by default
 **Skaven**: Clanrats, Gutter Runners, Rat Ogor (starting noise: 3, +2 each turn)  
 **Length**: maximum 8 rounds  

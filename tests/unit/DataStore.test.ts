@@ -3,7 +3,7 @@ import { test } from 'node:test';
 
 import { DataStore, SAVE_SCHEMA_VERSION } from '../../src/DataStore.ts';
 import { createInitialGameState } from '../../src/game/gameState.ts';
-import { THE_NEST } from '../../src/game/missions/theNest.ts';
+import { THE_UNDERBURROW } from '../../src/game/missions/theUnderburrow.ts';
 
 class MemoryStorage implements Storage {
   readonly #values = new Map<string, string>();
@@ -35,7 +35,7 @@ class MemoryStorage implements Storage {
 
 test('the data store restores the single saved game from localStorage', () => {
   const storage = new MemoryStorage();
-  const state = { ...createInitialGameState(THE_NEST), round: 2, phase: 'skaven' as const };
+  const state = { ...createInitialGameState(THE_UNDERBURROW), round: 2, phase: 'skaven' as const };
   storage.setItem(
     'savedGame',
     JSON.stringify({

@@ -15,7 +15,9 @@ import { SetupGameModule } from '/src/game/modules/setup.js';
 import { InitialNoiseGameModule } from '/src/game/modules/initialNoise.js';
 import { HeroTurnGameModule } from '/src/game/modules/heroTurn.js';
 import { SkavenTurnGameModule } from '/src/game/modules/skavenTurn.js';
-import { THE_NEST } from '/src/game/missions/theNest.js';
+import { MISSIONS, getMissionDefinition } from '/src/game/missions/registry.js';
+import type { MissionDefinition } from '/src/game/missionDefinition.js';
+import type { GameState } from '/src/game/gameState.js';
 import type { ImportantEventPresentation } from '/src/game/eventPresentation.js';
 
 const whenLoaded = Promise.all([
@@ -39,7 +41,22 @@ whenLoaded.then(async () => {
   const setup = document.querySelector('game-setup');
   const confirmationModal = document.querySelector('confirmation-modal');
   const header = document.querySelector<HTMLElement>('#main-head');
-  if (!board || !setup || !confirmationModal || !header) {
+  const titleScreen = document.querySelector<HTMLElement>('#title-screen');
+  const gameShell = document.querySelector<HTMLElement>('#game-shell');
+  const missionTitle = document.querySelector<HTMLElement>('#mission-title');
+  const selectMission = document.querySelector<HTMLButtonElement>('#select-mission');
+  const missionList = document.querySelector<HTMLElement>('#mission-list');
+  if (
+    !board ||
+    !setup ||
+    !confirmationModal ||
+    !header ||
+    !titleScreen ||
+    !gameShell ||
+    !missionTitle ||
+    !selectMission ||
+    !missionList
+  ) {
     throw new Error('The game board, setup controls, and application shell are required');
   }
   const quitGame =
@@ -56,11 +73,6 @@ whenLoaded.then(async () => {
 
   DataStore.init();
   const savedGame = DataStore.savedGame;
-  const session = new GameSession(THE_NEST, browserRandomSource, savedGame?.state, state => {
-    DataStore.saveGame(state);
-    quitGame.hidden = false;
-  });
-  quitGame.hidden = session.heroView.setupStep === 'select-roster';
 
   quitGame.addEventListener('click', () => {
     const cleanup = () => {
@@ -78,16 +90,43 @@ whenLoaded.then(async () => {
     confirmationModal.showModal('Quit this game? All saved progress will be deleted.');
   });
 
-  const gameModules: readonly GameModule[] = Object.freeze([
-    new SetupGameModule({ session, board, setup }),
-    new InitialNoiseGameModule({ session, board, setup, randomSource: browserRandomSource }),
-    new HeroTurnGameModule({ session, board, setup, randomSource: browserRandomSource }),
-    new SkavenTurnGameModule({ session, board, setup, randomSource: browserRandomSource }),
-  ]);
-  const delegateGameEvent = createGameEventDelegate(gameModules);
-  const gameEventTypes = new Set(gameModules.flatMap(module => module.eventTypes));
-  for (const eventType of gameEventTypes) document.addEventListener(eventType, delegateGameEvent);
-  const resumedEvents = savedGame ? runSoloSkavenAi(session, browserRandomSource) : [];
-  for (const module of gameModules) module.render();
-  if (resumedEvents.length > 0) setup.announce(resumedEvents);
+  const startGame = (mission: MissionDefinition, savedState?: GameState) => {
+    titleScreen.hidden = true;
+    gameShell.hidden = false;
+    missionTitle.textContent = mission.name;
+    board.mission = mission;
+    quitGame.hidden = false;
+    const session = new GameSession(mission, browserRandomSource, savedState, state => {
+      DataStore.saveGame(state);
+    });
+    const gameModules: readonly GameModule[] = Object.freeze([
+      new SetupGameModule({ session, board, setup }),
+      new InitialNoiseGameModule({ session, board, setup, randomSource: browserRandomSource }),
+      new HeroTurnGameModule({ session, board, setup, randomSource: browserRandomSource }),
+      new SkavenTurnGameModule({ session, board, setup, randomSource: browserRandomSource }),
+    ]);
+    const delegateGameEvent = createGameEventDelegate(gameModules);
+    const gameEventTypes = new Set(gameModules.flatMap(module => module.eventTypes));
+    for (const eventType of gameEventTypes) document.addEventListener(eventType, delegateGameEvent);
+    const resumedEvents = savedState ? runSoloSkavenAi(session, browserRandomSource) : [];
+    for (const module of gameModules) module.render();
+    if (resumedEvents.length > 0) setup.announce(resumedEvents);
+  };
+
+  selectMission.addEventListener('click', () => {
+    missionList.hidden = false;
+    selectMission.hidden = true;
+    missionList.querySelector('button')?.focus();
+  });
+  for (const mission of Object.values(MISSIONS)) {
+    const choice = h('button', { type: 'button', className: 'mission-choice' }, [
+      h('span', { textContent: mission.name }),
+      h('small', {
+        textContent: `${mission.board.width} × ${mission.board.height} board · ${mission.board.nests.length} ${mission.board.nests.length === 1 ? 'nest' : 'nests'} · ${mission.roundLimit} rounds`,
+      }),
+    ]);
+    choice.addEventListener('click', () => startGame(mission));
+    missionList.append(choice);
+  }
+  if (savedGame) startGame(getMissionDefinition(savedGame.state.missionId), savedGame.state);
 });

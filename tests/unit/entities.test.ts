@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import { test } from 'node:test';
 
 import { ALL_HERO_IDS, HERO_DEFINITIONS, SKAVEN_DEFINITIONS } from '../../src/game/entities.ts';
-import { THE_NEST } from '../../src/game/missions/theNest.ts';
+import { THE_UNDERBURROW } from '../../src/game/missions/theUnderburrow.ts';
 
 test('all six unique heroes have their printed stats and two abilities', () => {
   assert.deepEqual(ALL_HERO_IDS, ['gotrek', 'felix', 'snorri', 'ulrika', 'maximilian', 'malakai']);
@@ -38,8 +38,8 @@ test('all three Skaven definitions have their printed stats and abilities', () =
   );
 });
 
-test('The Nest noise bag has the specified 20 results', () => {
-  const counts = THE_NEST.noiseBag.reduce<Record<string, number>>((result, id) => {
+test('The Underburrow noise bag has the specified 20 results', () => {
+  const counts = THE_UNDERBURROW.noiseBag.reduce<Record<string, number>>((result, id) => {
     result[id] = (result[id] ?? 0) + 1;
     return result;
   }, {});
@@ -51,6 +51,6 @@ test('The Nest noise bag has the specified 20 results', () => {
     'rat-ogor': 1,
     nothing: 5,
   });
-  assert.equal(THE_NEST.initialNoiseCount, 3);
-  assert.equal(THE_NEST.noisePerTurn, 2);
+  assert.equal(THE_UNDERBURROW.initialNoiseCount, 3);
+  assert.equal(THE_UNDERBURROW.noisePerTurn, 2);
 });
