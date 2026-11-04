@@ -7,7 +7,7 @@ import type {
 } from '/src/canvas/boardRenderer.js';
 import { pointToSquare } from '/src/canvas/boardGeometry.js';
 import type { BoardGeometry } from '/src/canvas/boardGeometry.js';
-import { h } from '../src/utils.js';
+import { h } from '/src/utils.js';
 import type { Position } from '/src/game/map.js';
 import type { MissionDefinition } from '/src/game/missionDefinition.js';
 import { THE_NEST } from '/src/game/missions/theNest.js';

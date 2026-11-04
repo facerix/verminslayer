@@ -1,6 +1,9 @@
 # Enable rewrite engine
 RewriteEngine On
 
+# Keep the mission query string on the extensionless game URL.
+RewriteRule ^game$ game.html [L]
+
 # Force HTTPS
 RewriteCond %{HTTPS} off
 RewriteRule ^(.*)$ https://%{HTTP_HOST}%{REQUEST_URI} [L,R=301]

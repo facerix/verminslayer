@@ -22,6 +22,6 @@
     "inlineSources": true,
     "skipLibCheck": true
   },
-  "include": ["src/**/*", "components/**/*", "index.ts", "about.ts"],
+  "include": ["src/**/*", "components/**/*", "index.ts", "game.ts", "about.ts"],
   "exclude": ["node_modules", "dist", "tests"]
 }

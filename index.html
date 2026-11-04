@@ -28,42 +28,21 @@
     <link rel="manifest" href="/manifest.json" />
   </head>
 
-  <body class="u-fill-height">
-    <header id="main-head">
-      <a class="header-identity" href="/">
-        <img id="logo" src="/favicon.svg" alt="" />
-        <h1>Verminslayer</h1>
-      </a>
-      <button id="quit-game" type="button" hidden>Quit game</button>
-    </header>
+  <body class="u-fill-height title-page">
     <main id="title-screen" class="title-screen">
-      <div class="title-card">
-        <p class="eyebrow">Verminslayer</p>
-        <h2>Descend into the dark.</h2>
-        <p>A cooperative dungeon crawl against the Skaven horde.</p>
-        <button id="select-mission" type="button">Select your mission</button>
-        <div id="mission-list" class="mission-list" hidden></div>
+      <div class="title-content">
+        <img class="title-logo" src="/images/marquee.png" alt="Verminslayer" />
+        <nav class="title-menu" aria-label="Options">
+          <a id="new-game" href="/game">New Game</a>
+          <a id="continue-game" class="continue-game" href="/game" hidden>Continue</a>
+          <stage-select-modal></stage-select-modal>
+        </nav>
       </div>
-    </main>
-    <main id="game-shell" class="game-shell" hidden>
-      <section class="board-panel" aria-labelledby="mission-title">
-        <div class="mission-heading">
-          <p class="eyebrow">Mission</p>
-          <h2 id="mission-title"></h2>
-        </div>
-        <toast-message id="event-highlight"></toast-message>
-        <div class="board-stage"><game-board></game-board></div>
-      </section>
-
-      <aside class="mission-panel" aria-label="Game controls" tabindex="0">
-        <game-setup></game-setup>
-      </aside>
     </main>
 
     <footer id="main-foot">A&nbsp;<a href="/about.html">Facerix</a>&nbsp;creation</footer>
 
     <update-notification></update-notification>
-    <confirmation-modal></confirmation-modal>
   </body>
   <script src="/index.js" type="module"></script>
 </html>

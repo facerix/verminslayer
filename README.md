@@ -73,7 +73,8 @@ Keep using `.ts` imports for direct test dependencies; the hook is for transitiv
 
 ```
 /
-├── index.html/.ts             # Main entry point
+├── index.html/.ts             # Title page and mission selection
+├── game.html/.ts              # Play surface, selected by /game?id=<mission-id>
 ├── about.html/.ts             # About page
 ├── main.css                   # Global styles
 ├── manifest.json              # PWA manifest

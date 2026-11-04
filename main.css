@@ -43,63 +43,74 @@ body.u-fill-height {
 }
 
 .title-screen {
-  display: grid;
-  place-items: center;
-  padding: 2rem;
+  position: relative;
+  display: flex;
+  align-items: center;
+  background: #080b09 url('/images/title.png') center / cover no-repeat;
+  isolation: isolate;
 }
 
-.title-card {
-  width: min(100%, 38rem);
-  padding: clamp(1.5rem, 5vw, 3rem);
-  border: 1px solid #684b39;
-  border-radius: 0.6rem;
-  background: var(--panel-color);
-  box-shadow: 0 1rem 3rem rgb(0 0 0 / 30%);
+.title-screen::before {
+  position: absolute;
+  z-index: -1;
+  inset: 0;
+  content: '';
+  background: linear-gradient(90deg, rgb(0 0 0 / 90%) 0%, rgb(0 0 0 / 66%) 27%, transparent 72%);
 }
 
-.title-card h2 {
-  margin: 0 0 0.75rem;
-  font-size: clamp(2rem, 5vw, 3rem);
+.title-content {
+  width: min(100%, 34rem);
+  margin: auto auto auto 0;
+  padding: 1.5rem 1rem 1.5rem 0;
 }
 
-.title-card p {
-  color: var(--muted-color);
+.title-logo {
+  display: block;
+  width: min(100%, 34rem);
+  height: auto;
 }
 
-.title-card button,
-.mission-choice {
-  padding: 0.85rem 1rem;
-  border: 1px solid var(--accent-color);
-  border-radius: 0.35rem;
-  background: #231d19;
-  color: #e6ddce;
-  font: inherit;
-  font-weight: 700;
-  cursor: pointer;
+.title-tagline {
+  margin: 0.5rem 0 0;
+  color: #f5e8d3;
+  font-family: 'Arial Black', 'Arial Bold', Gadget, sans-serif;
+  font-size: clamp(1.5rem, 3vw, 2.4rem);
+  font-variant: small-caps;
 }
 
-.title-card button:hover,
-.title-card button:focus-visible {
-  outline: 2px solid var(--accent-color);
-  outline-offset: 2px;
+.title-description {
+  max-width: 28rem;
+  margin: 0.5rem 0 2rem;
+  color: #948678;
+  line-height: 1.5;
+  text-shadow: 0 1px 4px #000;
 }
 
-.mission-list {
-  display: grid;
-  gap: 0.7rem;
-  margin-top: 1.5rem;
+.title-menu {
+  margin: 4rem 0;
+
+  a {
+    display: block;
+    margin: 2rem 0;
+    padding-left: 4rem;
+    color: #dccbb6;
+    font-size: 1.75rem;
+    text-transform: capitalize;
+    font-variant: small-caps;
+    text-decoration: none;
+
+    &:hover,
+    &:focus {
+      color: white;
+      background-image: url(/images/menu-highlight.png);
+      background-repeat: no-repeat;
+      text-shadow: 0 2px 4px #000;
+    }
+  }
 }
 
-.mission-choice {
-  display: grid;
-  gap: 0.3rem;
-  width: 100%;
-  text-align: left;
-}
-
-.mission-choice small {
-  color: var(--muted-color);
-  font-weight: 400;
+.title-page #main-foot {
+  background: #090b09;
 }
 
 footer,

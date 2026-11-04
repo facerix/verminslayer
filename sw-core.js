@@ -26,6 +26,8 @@ const CacheConfig = {
       '/',
       '/index.html',
       '/index.js',
+      '/game.html',
+      '/game.js',
       '/about.html',
       '/about.js',
       '/main.css',
@@ -267,6 +269,10 @@ const ServiceWorkerCore = {
   async handleFetch(request, cacheNames, logPrefix = '[SW]', useNetworkFirstForHTML = false) {
     if (request.method !== 'GET') {
       return fetch(request);
+    }
+
+    if (new URL(request.url).pathname === '/game') {
+      request = new Request(new URL('/game.html', request.url));
     }
 
     let cacheName;

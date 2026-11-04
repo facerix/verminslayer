@@ -19,7 +19,12 @@ test('mission registry presents a small introductory Nest and the larger Underbu
   );
   assert.deepEqual(THE_NEST.allowedHeroes, ['gotrek', 'felix']);
   assert.deepEqual(THE_NEST.fixedHeroes, ['gotrek', 'felix']);
-  assert.ok(THE_NEST.noiseBag.every(id => id === 'two-clanrats' || id === 'nothing'));
+  assert.ok(
+    THE_NEST.noiseBag.every(
+      id => id === 'three-clanrats' || id === 'two-clanrats' || id === 'nothing'
+    )
+  );
+  assert.ok(THE_NEST.noiseBag.includes('three-clanrats'));
 });
 
 test('the introductory map connects deployment to the nest, both spawns, and exit', () => {

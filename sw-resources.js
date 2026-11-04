@@ -7,6 +7,7 @@ const AppCacheResources = Object.freeze({
     '/components/GameBoard.js',
     '/components/GameSetup.js',
     '/components/ConfirmationModal.js',
+    '/components/StageSelectModal.js',
     '/src/DataStore.js',
     '/src/canvas/boardGeometry.js',
     '/src/canvas/boardRenderer.js',
@@ -21,6 +22,7 @@ const AppCacheResources = Object.freeze({
     '/src/game/lineOfSight.js',
     '/src/game/pathfinding.js',
     '/src/game/missionDefinition.js',
+    '/src/game/navigation.js',
     '/src/game/modules/setup.js',
     '/src/game/modules/initialNoise.js',
     '/src/game/modules/heroTurn.js',
@@ -33,7 +35,7 @@ const AppCacheResources = Object.freeze({
     '/src/game/skavenPlacement.js',
     '/src/uuid.js',
   ],
-  static: [],
+  static: ['/images/title.png', '/images/marquee.png', '/images/menu-highlight.png'],
 });
 
 self.AppCacheResources = AppCacheResources;

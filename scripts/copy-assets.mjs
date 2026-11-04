@@ -16,6 +16,7 @@ const dist = join(root, 'dist');
 // Individual files copied to the same relative path under dist/.
 const files = [
   'index.html',
+  'game.html',
   'about.html',
   'main.css',
   'manifest.json',

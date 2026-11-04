@@ -1,6 +1,6 @@
 import { latestImportantEvent } from '/src/game/eventPresentation.js';
 import { getRerollAbilities, distance } from '/src/game/reactiveCombat.js';
-import { h } from '../src/utils.js';
+import { h } from '/src/utils.js';
 import {
   getSkavenModelIdentifier,
   HERO_DEFINITIONS,

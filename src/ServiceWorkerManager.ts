@@ -1,6 +1,6 @@
 // Singleton module for service worker registration
 // Provides centralized management of service worker lifecycle
-import { isDevelopmentMode } from './utils.js';
+import { isDevelopmentMode } from '/src/utils.js';
 
 interface CacheInfoMessage {
   version?: string;

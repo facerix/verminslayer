@@ -7,16 +7,9 @@
  *   modal.addEventListener('confirm', () => { ... });
  *   modal.addEventListener('cancel', () => { ... });
  *   modal.showModal('Are you sure you want to delete this?', { optionalContext });
- *
- * CSS variables for customization (set on :host or a parent):
- *   --confirmation-primary: #4a4a4a
- *   --confirmation-border: rgba(0, 0, 0, 0.12)
- *   --confirmation-focus: rgba(74, 74, 74, 0.4)
- *   --confirmation-bg: #ffffff
- *   --confirmation-header-bg: #f5f5f5
  */
 
-import { h, CreateSvg } from '../src/utils.js';
+import { h, CreateSvg } from '/src/utils.js';
 
 const closeIconSvg = CreateSvg(
   '<path d="M18 6L6 18M6 6l12 12" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>',
@@ -26,11 +19,10 @@ const closeIconSvg = CreateSvg(
 
 const CSS = `
 :host {
-  --confirmation-primary: #4a4a4a;
-  --confirmation-border: rgba(0, 0, 0, 0.12);
-  --confirmation-focus: rgba(74, 74, 74, 0.4);
-  --confirmation-bg: #ffffff;
-  --confirmation-header-bg: #f5f5f5;
+  --confirmation-primary: #f4ede5;
+  --confirmation-border: rgba(192, 0, 0, 0.12);
+  --confirmation-focus: rgba(192, 0, 0, 0.75);
+  --confirmation-bg: #2c2520;
 
   dialog[open] {
     display: flex;
@@ -53,8 +45,8 @@ const CSS = `
 
   header {
     padding: 1em 1.5em;
-    background-color: var(--confirmation-header-bg);
-    border-bottom: 1px solid var(--confirmation-border);
+    background-color: #171310;
+    border-bottom: 1px solid #d4552e;
     display: flex;
     justify-content: space-between;
     align-items: center;
@@ -102,7 +94,7 @@ const CSS = `
 
     #message {
       margin: 0;
-      color: #303030;
+      color: var(--confirmation-primary);
       font-size: 1em;
       line-height: 1.5;
     }
@@ -146,8 +138,8 @@ const CSS = `
     }
 
     #btnOk {
-      background-color: var(--confirmation-primary);
-      color: white;
+      background-color: var(--confirmation-focus);
+      color: var(--confirmation-primary);
       border: none;
     }
 

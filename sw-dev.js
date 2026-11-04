@@ -1,5 +1,5 @@
 // Service Worker for Verminslayer - Development Version
-const VERSION = '0.1.11-dev';
+const VERSION = '0.1.15-dev';
 importScripts(`/sw-resources.js?v=${VERSION}`);
 importScripts(`/sw-core.js?v=${VERSION}`);
 
@@ -43,9 +43,6 @@ self.addEventListener('fetch', event => {
     ServiceWorkerCore.handleFetch(event.request, CACHE_NAMES, LOG_PREFIX)
       .catch(error => {
         console.error(`${LOG_PREFIX} Fetch failed:`, error);
-        if (event.request.mode === 'navigate') {
-          return caches.match('/');
-        }
         throw error;
       })
   );

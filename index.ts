@@ -1,132 +1,39 @@
 import { serviceWorkerManager } from '/src/ServiceWorkerManager.js';
-import '/components/GameBoard.js';
-import '/components/GameSetup.js';
-import '/components/ConfirmationModal.js';
 import '/components/UpdateNotification.js';
-import ToastMessage from '/components/ToastMessage.js';
+import '/components/StageSelectModal.js';
 import DataStore from '/src/DataStore.js';
-import { h } from './src/utils.js';
-import { createGameEventDelegate } from '/src/game/gameModule.js';
-import type { GameModule } from '/src/game/gameModule.js';
-import { GameSession } from '/src/game/gameSession.js';
-import { browserRandomSource } from '/src/game/gameState.js';
-import { runSoloSkavenAi } from '/src/game/skavenAi.js';
-import { SetupGameModule } from '/src/game/modules/setup.js';
-import { InitialNoiseGameModule } from '/src/game/modules/initialNoise.js';
-import { HeroTurnGameModule } from '/src/game/modules/heroTurn.js';
-import { SkavenTurnGameModule } from '/src/game/modules/skavenTurn.js';
-import { MISSIONS, getMissionDefinition } from '/src/game/missions/registry.js';
-import type { MissionDefinition } from '/src/game/missionDefinition.js';
-import type { GameState } from '/src/game/gameState.js';
-import type { ImportantEventPresentation } from '/src/game/eventPresentation.js';
+import { MISSIONS } from '/src/game/missions/registry.js';
+import { gameUrl } from '/src/game/navigation.js';
+import type StageSelectModal from '/components/StageSelectModal.js';
 
-const whenLoaded = Promise.all([
+const whenReady = Promise.all([
   customElements.whenDefined('update-notification'),
-  customElements.whenDefined('confirmation-modal'),
-  customElements.whenDefined('toast-message'),
+  customElements.whenDefined('stage-select-modal'),
 ]);
 
-whenLoaded.then(async () => {
+whenReady.then(async () => {
   const updateNotification = document.querySelector('update-notification');
-
   window.addEventListener('sw-update-available', event => {
-    console.log('Service worker update available, showing notification');
     updateNotification?.show(event.detail.pendingWorker);
   });
-
   await serviceWorkerManager.register();
 
-  // actual game bootstrapping
-  const board = document.querySelector('game-board');
-  const setup = document.querySelector('game-setup');
-  const confirmationModal = document.querySelector('confirmation-modal');
-  const header = document.querySelector<HTMLElement>('#main-head');
-  const titleScreen = document.querySelector<HTMLElement>('#title-screen');
-  const gameShell = document.querySelector<HTMLElement>('#game-shell');
-  const missionTitle = document.querySelector<HTMLElement>('#mission-title');
-  const selectMission = document.querySelector<HTMLButtonElement>('#select-mission');
-  const missionList = document.querySelector<HTMLElement>('#mission-list');
-  if (
-    !board ||
-    !setup ||
-    !confirmationModal ||
-    !header ||
-    !titleScreen ||
-    !gameShell ||
-    !missionTitle ||
-    !selectMission ||
-    !missionList
-  ) {
-    throw new Error('The game board, setup controls, and application shell are required');
-  }
-  const quitGame =
-    document.querySelector<HTMLButtonElement>('#quit-game') ??
-    h('button', { id: 'quit-game', type: 'button', hidden: true, textContent: 'Quit game' });
-  if (!quitGame.isConnected) header.append(quitGame);
-
-  const highlight = document.querySelector<ToastMessage>('#event-highlight');
-  if (!highlight) throw new Error('The event highlight is required');
-  document.addEventListener('game-important-event', event => {
-    const result = (event as CustomEvent<ImportantEventPresentation>).detail;
-    highlight.show(result.title, result.detail);
-  });
+  const missionSelect = document.querySelector<StageSelectModal>('stage-select-modal');
+  const newGame = document.querySelector<HTMLAnchorElement>('#new-game');
+  const continueGame = document.querySelector<HTMLAnchorElement>('#continue-game');
 
   DataStore.init();
   const savedGame = DataStore.savedGame;
-
-  quitGame.addEventListener('click', () => {
-    const cleanup = () => {
-      confirmationModal.removeEventListener('confirm', confirm);
-      confirmationModal.removeEventListener('cancel', cancel);
-    };
-    const confirm = () => {
-      cleanup();
-      DataStore.clearSavedGame();
-      window.location.reload();
-    };
-    const cancel = () => cleanup();
-    confirmationModal.addEventListener('confirm', confirm);
-    confirmationModal.addEventListener('cancel', cancel);
-    confirmationModal.showModal('Quit this game? All saved progress will be deleted.');
-  });
-
-  const startGame = (mission: MissionDefinition, savedState?: GameState) => {
-    titleScreen.hidden = true;
-    gameShell.hidden = false;
-    missionTitle.textContent = mission.name;
-    board.mission = mission;
-    quitGame.hidden = false;
-    const session = new GameSession(mission, browserRandomSource, savedState, state => {
-      DataStore.saveGame(state);
-    });
-    const gameModules: readonly GameModule[] = Object.freeze([
-      new SetupGameModule({ session, board, setup }),
-      new InitialNoiseGameModule({ session, board, setup, randomSource: browserRandomSource }),
-      new HeroTurnGameModule({ session, board, setup, randomSource: browserRandomSource }),
-      new SkavenTurnGameModule({ session, board, setup, randomSource: browserRandomSource }),
-    ]);
-    const delegateGameEvent = createGameEventDelegate(gameModules);
-    const gameEventTypes = new Set(gameModules.flatMap(module => module.eventTypes));
-    for (const eventType of gameEventTypes) document.addEventListener(eventType, delegateGameEvent);
-    const resumedEvents = savedState ? runSoloSkavenAi(session, browserRandomSource) : [];
-    for (const module of gameModules) module.render();
-    if (resumedEvents.length > 0) setup.announce(resumedEvents);
-  };
-
-  selectMission.addEventListener('click', () => {
-    missionList.hidden = false;
-    selectMission.hidden = true;
-    missionList.querySelector('button')?.focus();
-  });
-  for (const mission of Object.values(MISSIONS)) {
-    const choice = h('button', { type: 'button', className: 'mission-choice' }, [
-      h('span', { textContent: mission.name }),
-      h('small', {
-        textContent: `${mission.board.width} × ${mission.board.height} board · ${mission.board.nests.length} ${mission.board.nests.length === 1 ? 'nest' : 'nests'} · ${mission.roundLimit} rounds`,
-      }),
-    ]);
-    choice.addEventListener('click', () => startGame(mission));
-    missionList.append(choice);
+  if (savedGame && continueGame) {
+    const mission = MISSIONS[savedGame.state.missionId];
+    if (!mission) throw new Error(`Saved game has unknown mission ${savedGame.state.missionId}`);
+    continueGame.href = gameUrl(mission.id);
+    continueGame.textContent = `Continue ${mission.name}`;
+    continueGame.hidden = false;
   }
-  if (savedGame) startGame(getMissionDefinition(savedGame.state.missionId), savedGame.state);
+
+  newGame?.addEventListener("click", evt => {
+    evt.preventDefault();
+    missionSelect?.showModal();
+  })
 });
